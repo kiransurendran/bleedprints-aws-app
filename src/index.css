@@ -49,6 +49,48 @@
   }
 }
 
+.dark {
+  --background: 220 15% 10%;
+  --foreground: 210 24% 96%;
+  --card: 220 20% 12%;
+  --card-foreground: 210 20% 96%;
+  --popover: 220 20% 13%;
+  --popover-foreground: 210 20% 96%;
+  --primary: 180 98% 60%;
+  --primary-foreground: 0 0% 100%;
+  --primary-container: 180 74% 19%;
+  --secondary: 214 74% 73%;
+  --secondary-foreground: 210 18% 18%;
+  --secondary-container: 210 22% 18%;
+  --muted: 212 14% 14%;
+  --muted-foreground: 215 14% 72%;
+  --accent: 212 14% 16%;
+  --accent-foreground: 210 17% 94%;
+  --destructive: 0 79% 72%;
+  --destructive-foreground: 0 0% 100%;
+  --tertiary: 40 100% 60%;
+  --tertiary-container: 40 100% 36%;
+  --border: 220 25% 30%;
+  --input: 220 25% 30%;
+  --ring: 190 100% 50%;
+
+  --surface: 220 15% 12%;
+  --surface-dim: 220 16% 16%;
+  --surface-bright: 220 15% 20%;
+  --surface-container-lowest: 216 22% 15%;
+  --surface-container-low: 215 20% 18%;
+  --surface-container: 212 20% 22%;
+  --surface-container-high: 210 18% 28%;
+  --surface-container-highest: 208 17% 34%;
+  --surface-variant: 216 18% 24%;
+  --on-surface: 210 24% 96%;
+  --on-surface-variant: 210 18% 72%;
+  --outline: 220 20% 40%;
+  --outline-variant: 215 20% 30%;
+  --inverse-surface: 210 10% 94%;
+  --inverse-on-surface: 220 20% 16%;
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -71,6 +113,9 @@
   .glass-header {
     background: rgba(255, 255, 255, 0.8);
     backdrop-filter: blur(20px);
+  }
+  .dark .glass-header {
+    background: rgba(10, 14, 29, 0.75);
   }
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

@@ -14,7 +14,7 @@ export default function CreatePosterPage() {
       <Navbar />
       <main className="pt-20 flex-1 flex overflow-hidden" style={{ height: 'calc(100vh - 5rem)' }}>
         {/* Left Sidebar */}
-        <aside className="hidden md:flex flex-col w-64 h-full bg-zinc-50 border-r-0 p-4 gap-2">
+        <aside className="hidden md:flex flex-col w-64 h-full bg-surface-container-low border-r-0 p-4 gap-2">
           <div className="mb-6 px-2">
             <h2 className="text-sm font-bold text-on-surface uppercase tracking-widest">Categories</h2>
             <p className="text-xs text-on-surface-variant">Browse by Style</p>
@@ -30,10 +30,10 @@ export default function CreatePosterPage() {
               <button
                 key={cat.label}
                 className={`flex items-center gap-3 px-4 py-3 text-sm font-medium transition-transform duration-200 hover:translate-x-1 rounded-lg ${
-                  cat.active ? 'bg-white text-on-surface shadow-sm' : 'text-zinc-600 hover:bg-zinc-200/50'
+                  cat.active ? 'bg-surface-container-highest text-on-surface shadow-sm' : 'text-on-surface-variant hover:bg-surface-dim/70'
                 }`}
               >
-                <MaterialIcon icon={cat.icon} className={cat.active ? 'text-primary' : ''} />
+                <MaterialIcon icon={cat.icon} className={cat.active ? 'text-on-surface' : 'text-on-surface-variant'} />
                 {cat.label}
               </button>
             ))}
@@ -46,7 +46,9 @@ export default function CreatePosterPage() {
                   key={s}
                   onClick={() => setActiveSize(s)}
                   className={`flex-1 py-1 text-[10px] rounded ${
-                    activeSize === s ? 'bg-primary text-white' : 'bg-white border border-outline-variant shadow-sm'
+                    // activeSize === s ? 'bg-surface-container-highest text-white' : 'bg-surface-container text-on-surface border border-outline-variant shadow-sm'
+
+                    activeSize === s ? 'bg-surface-container-highest text-on-surface font-bold' : 'bg-surface-container text-on-surface border border-outline-variant shadow-sm'
                   }`}
                 >
                   {s}
@@ -58,7 +60,7 @@ export default function CreatePosterPage() {
 
         {/* Canvas Area */}
         <section className="flex-1 bg-surface-container-low relative flex items-center justify-center p-8 overflow-auto">
-          <div className="relative w-[450px] aspect-[1/1.414] bg-white shadow-[0_20px_50px_rgba(0,0,0,0.1)] group overflow-hidden">
+          <div className="relative w-[450px] aspect-[1/1.414] bg-surface-container shadow-[0_20px_50px_rgba(0,0,0,0.1)] group overflow-hidden">
             <img
               src="https://lh3.googleusercontent.com/aida-public/AB6AXuCgyAPQunWDKmY6lPqqL2xfUGw5Cq_WVIjizFnxyPyVB2VA96GeyZl0KIsrTQPAnGm20wD37COixK_Qs_64iNmmI_rjPbxWONW09qmyOhviRlUXmjcwrtW5CM8LVMdq0GOHhB5ogDX643rkNcAkOXP7iGHy7T5-8GGup_8WoQENGPro2t3ZYV1ocHJmORUINwnAPlZX_LUELdV-Dr7HyN4N7hNZOghzrOZuF8iUTSZQk-Gl_vKqxXS2apIFd_ExbFUPiYLWS_5qcQ"
               alt="Poster Preview"
