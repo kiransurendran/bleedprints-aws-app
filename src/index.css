@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 11% 98%;
+    --foreground: 195 14% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 195 14% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 195 14% 10%;
+    --primary: 180 1% 37%;
+    --primary-foreground: 0 0% 100%;
+    --primary-container: 180 1% 47%;
+    --secondary: 213 16% 38%;
+    --secondary-foreground: 0 0% 100%;
+    --secondary-container: 214 46% 89%;
+    --muted: 210 7% 93%;
+    --muted-foreground: 220 14% 29%;
+    --accent: 210 7% 93%;
+    --accent-foreground: 195 14% 10%;
+    --destructive: 0 73% 41%;
+    --destructive-foreground: 0 0% 100%;
+    --tertiary: 30 100% 27%;
+    --tertiary-container: 30 100% 34%;
+    --border: 224 22% 80%;
+    --input: 224 22% 80%;
+    --ring: 180 1% 37%;
+    --radius: 0.125rem;
+
+    --surface: 210 11% 98%;
+    --surface-dim: 210 3% 84%;
+    --surface-bright: 210 11% 98%;
+    --surface-container-lowest: 0 0% 100%;
+    --surface-container-low: 210 5% 95%;
+    --surface-container: 210 4% 93%;
+    --surface-container-high: 210 3% 91%;
+    --surface-container-highest: 210 3% 88%;
+    --surface-variant: 210 3% 88%;
+    --on-surface: 195 14% 10%;
+    --on-surface-variant: 220 14% 29%;
+    --outline: 225 8% 48%;
+    --outline-variant: 224 22% 80%;
+    --inverse-surface: 192 8% 19%;
+    --inverse-on-surface: 210 5% 95%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-surface-container-low text-on-surface font-body antialiased;
+  }
+  h1, h2, h3 {
+    font-family: 'Manrope', sans-serif;
+  }
+}
+
+@layer components {
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .bg-cta-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary-container)) 100%);
+  }
+  .glass-header {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(20px);
+  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
