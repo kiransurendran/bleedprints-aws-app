@@ -1,10 +1,14 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import type { CurrencyCode } from '@/types/catalog';
 
 export interface CartItem {
   id: string;
+  productSlug?: string;
+  dimensionId?: string;
   name: string;
   image: string;
   price: number;
+  currencyCode?: CurrencyCode;
   quantity: number;
   size: string;
   frame: string;
@@ -23,31 +27,30 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
-const defaultItems: CartItem[] = [
-  {
-    id: '1',
-    name: 'The Summer Solstice',
-    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD07QOcSnUiBGpsQWrQDA2-IV90jEfAD3Knc3UA73Ty0atlTRoaXCN8_3inWgoTKvKhhYbga1bw2M9udQWLcHKtRyXA0HbvkiS6ujQ-xzBlbFiKVe9yHVeLsBHO8m7UqUUrcGhA3fXC3O4H9EpYCuBrMU8_ksvjvoEqfLj8xWdXat86eL-K2FdOBUtP9Fn3dOvCVsPfROSlhjco6M4xiFDEaeS8rktOZWPtv0QPxHMu6V4BoHUG_hXO18yavC-uMQZH2lOkuHuSCw',
-    price: 124.00,
-    quantity: 1,
-    size: 'A3 (29.7 x 42 cm)',
-    frame: 'Natural Oak',
-    series: 'Limited Edition',
-  },
-  {
-    id: '2',
-    name: 'Geometric Void',
-    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuA6B1WFplu9CoUeQ6TZkWTNFjE7xEzVITxqnG6qLb7-co8kn4PulSIZfH2Li6MiGYtNl3HQventLJCbf6_PqAEOGdRr09q4ZZ-30_Jbp44yDADq8z82bRe3pnuzzpjUszWnA3e6rWKqo8-mn5UcUnEKOjn6D4wMBXUic2lLFp_kMNTiqSum8t1BmyhJCAUhBxQ3wgtPcmG77NPtJyP_TL3g506OHD3cnTycggJAkoPHAUtdRta4gK01Y71VMJZmyPfv6dK13d-hfg',
-    price: 89.00,
-    quantity: 2,
-    size: 'A2 (42 x 59.4 cm)',
-    frame: 'Unframed (Rolled)',
-    series: 'Curated Series',
-  },
-];
+const cartStorageKey = 'bleedprints-cart';
+
+const readCartFromStorage = (): CartItem[] => {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const stored = window.localStorage.getItem(cartStorageKey);
+    if (!stored) return [];
+
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Unable to restore cart from localStorage:', error);
+    return [];
+  }
+};
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>(defaultItems);
+  const [items, setItems] = useState<CartItem[]>(readCartFromStorage);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(cartStorageKey, JSON.stringify(items));
+  }, [items]);
 
   const addItem = (item: CartItem) => {
     setItems(prev => {

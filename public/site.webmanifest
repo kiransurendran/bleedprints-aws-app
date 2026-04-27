@@ -1,0 +1,16 @@
+{
+  "name": "BleedPrints",
+  "short_name": "BleedPrints",
+  "description": "Design-led storefront for collectible wall art and curated poster drops.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f4f1",
+  "theme_color": "#e9ddd2",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48 32x32 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

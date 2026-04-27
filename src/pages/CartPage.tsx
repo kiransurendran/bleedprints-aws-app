@@ -2,10 +2,23 @@ import { Link } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import MaterialIcon from '@/components/MaterialIcon';
+import { useAuth } from '@/context/AuthContext';
 import { useCart } from '@/context/CartContext';
+import { formatMoney } from '@/lib/money';
+import { usePageMetadata } from '@/lib/seo';
 
 export default function CartPage() {
+  const { user } = useAuth();
   const { items, removeItem, updateQuantity, subtotal, totalItems } = useCart();
+  const currencyCode = items[0]?.currencyCode ?? 'INR';
+  const checkoutPath = user ? '/checkout' : '/auth?redirect=%2Fcheckout';
+
+  usePageMetadata({
+    title: 'Your Cart | BleedPrints',
+    description: 'Review the posters in your BleedPrints cart before continuing to checkout.',
+    path: '/cart',
+    noIndex: true,
+  });
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -47,7 +60,7 @@ export default function CartPage() {
                         <MaterialIcon icon="add" className="text-sm" />
                       </button>
                     </div>
-                    <p className="text-xl font-bold font-headline text-on-surface">${(item.price * item.quantity).toFixed(2)}</p>
+                    <p className="text-xl font-bold font-headline text-on-surface">{formatMoney(item.price * item.quantity, item.currencyCode ?? currencyCode)}</p>
                   </div>
                 </div>
               </div>
@@ -77,34 +90,37 @@ export default function CartPage() {
             <div className="bg-surface-container-lowest p-8 rounded-xl">
               <h2 className="text-xl font-headline font-bold mb-6">Order Summary</h2>
               <div className="space-y-3 text-sm">
-                <div className="flex justify-between"><span className="text-secondary">Subtotal ({totalItems} items)</span><span className="font-semibold">${subtotal.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-secondary">Subtotal ({totalItems} items)</span><span className="font-semibold">{formatMoney(subtotal, currencyCode)}</span></div>
                 <div className="flex justify-between"><span className="text-secondary">Estimated Shipping</span><span className="text-secondary">Calculated at checkout</span></div>
-                <div className="flex justify-between"><span className="text-secondary">Carbon Offset</span><span className="font-semibold">$0.00</span></div>
+                <div className="flex justify-between"><span className="text-secondary">Carbon Offset</span><span className="font-semibold">{formatMoney(0, currencyCode)}</span></div>
               </div>
               <div className="border-t border-outline-variant/30 my-6" />
               <div className="flex justify-between items-baseline mb-1">
                 <span className="text-xs uppercase tracking-widest text-secondary font-bold">Total</span>
-                <span className="text-3xl font-headline font-extrabold">${subtotal.toFixed(2)}</span>
+                <span className="text-3xl font-headline font-extrabold">{formatMoney(subtotal, currencyCode)}</span>
               </div>
               <p className="text-[10px] text-right text-secondary mb-6">VAT included where applicable</p>
 
-              <Link to="/checkout" className="block w-full bg-cta-gradient text-white py-4 rounded-lg font-bold text-sm text-center hover:opacity-90 transition-opacity mb-3">
-                Proceed to Checkout
+              <Link to={checkoutPath} className="block w-full bg-cta-gradient text-white py-4 rounded-lg font-bold text-sm text-center hover:opacity-90 transition-opacity mb-3">
+                {user ? 'Proceed to Checkout' : 'Sign In to Checkout'}
               </Link>
-              <button className="w-full bg-surface-container-high text-on-surface py-4 rounded-lg font-bold text-sm hover:bg-surface-dim transition-colors mb-4">
-                Pay with GPay
-              </button>
+              <Link
+                to={checkoutPath}
+                className="block w-full bg-surface-container-high text-on-surface py-4 rounded-lg font-bold text-sm text-center hover:bg-surface-dim transition-colors mb-4"
+              >
+                {user ? 'Continue to Payment' : 'Login Required for Payment'}
+              </Link>
               <div className="flex items-center justify-center gap-2 text-xs text-secondary">
                 <MaterialIcon icon="lock" className="text-sm" />
-                <span>Secure SSL Encrypted Checkout</span>
+                <span>{user ? 'Secure SSL Encrypted Checkout' : 'Sign in is required before order placement'}</span>
               </div>
             </div>
 
             <div className="bg-surface-container-lowest p-6 rounded-xl">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-secondary mb-3">Promotional Code</h3>
-              <div className="flex gap-2">
-                <input className="flex-1 bg-surface-container-highest border-none rounded-sm px-4 py-2 text-sm focus:ring-1 focus:ring-primary" placeholder="GIFT20" />
-                <button className="bg-inverse-surface text-inverse-on-surface px-5 py-2 rounded-sm text-sm font-bold hover:opacity-90">Apply</button>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-secondary mb-3">Checkout Notes</h3>
+              <div className="space-y-3 text-sm text-secondary">
+                <p>Pricing now comes directly from the live product dimensions configured in your catalog.</p>
+                <p>Shipping speed, taxes, and payment methods are finalized during secure Razorpay checkout.</p>
               </div>
             </div>
           </aside>

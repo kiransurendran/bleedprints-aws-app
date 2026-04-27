@@ -1,144 +1,451 @@
-import { Link } from 'react-router-dom';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import Sidebar from '@/components/Sidebar';
 import MaterialIcon from '@/components/MaterialIcon';
+import { formatMoney } from '@/lib/money';
+import { useProducts } from '@/hooks/use-products';
+import {
+  getStorefrontOrientationBySlug,
+  getStorefrontPrintSizes,
+  matchesStorefrontCatalogFilters,
+  storefrontOrientationFilters,
+  storefrontPrintSizeFilters,
+  type StorefrontOrientation,
+  type StorefrontPrintSizeSlug,
+} from '@/lib/storefront/catalog-filters';
+import {
+  filterStorefrontProductsBySearch,
+  getStorefrontSearchQuery,
+  getStorefrontSortBySlug,
+  sortStorefrontProducts,
+  storefrontSortOptions,
+  type StorefrontSortSlug,
+} from '@/lib/storefront/catalog-discovery';
+import {
+  defaultStorefrontCollection,
+  getStorefrontCollectionBySlug,
+} from '@/lib/storefront/collection-filters';
+import { usePageMetadata } from '@/lib/seo';
 
-const posters = [
-  {
-    id: '1',
-    name: 'Geometric Void',
-    series: 'Archival Ink Print',
-    price: 45.00,
-    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuA6B1WFplu9CoUeQ6TZkWTNFjE7xEzVITxqnG6qLb7-co8kn4PulSIZfH2Li6MiGYtNl3HQventLJCbf6_PqAEOGdRr09q4ZZ-30_Jbp44yDADq8z82bRe3pnuzzpjUszWnA3e6rWKqo8-mn5UcUnEKOjn6D4wMBXUic2lLFp_kMNTiqSum8t1BmyhJCAUhBxQ3wgtPcmG77NPtJyP_TL3g506OHD3cnTycggJAkoPHAUtdRta4gK01Y71VMJZmyPfv6dK13d-hfg',
-    badge: 'A3 / A4 / A5',
-  },
-  {
-    id: '3',
-    name: 'Misty Silence',
-    series: 'Fine Art Collection',
-    price: 62.00,
-    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAxmwDhxIOBrd_CwGFvXAFk_aJVdz4bS5vbkbsedYDBhYL-oAHt5T_FRNjYfmRwcdIXQZK_SYEQKLM4F8pQpamrfK2lfya4MmIA8DOgs7ddpyUcOxTXVfJisGzd3fEw7fNbVZhvFnOj_g72qe4h1vpeGsP6noFkGBHf74t1vuuNl8z22XSFPP2fFTYuSRzmhFvIgJDpJez7jLDFS1CjhP0NHZ2o0N0664u1LFwo7D6-6cwd65OEQWso8oxwcvTXwaOqWxFkB5N9VA',
-    badge: 'HAND-NUMBERED',
-  },
-  {
-    id: '4',
-    name: 'Neon Pulse',
-    series: 'Pop Art Series',
-    price: 38.00,
-    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCizPB8qtm98KvT2YfKVVQz7iJ0riV5gKgDkVxm3H4phYTgvL3mBBsyH0FtjOAlGNufmnrZmKW8mCMgBtv2SsjvfsocknhwkGrxYDKG_nzw8h_NDQcXJODTKlqSLnFyWGAy1whQONP0GsilDTnFP4h0KM2ewxMMyPmcYCOjRZf0UB-Z8dRFL3e2-xn5FjtseCuxArE48l4ymKgKzrVsVS53ekPciZK1pEt9tjQTwX4Tx4FhrOeOw5w44PNww21FIAmILNhXH5tmGg',
-    badge: 'POPULAR',
-    badgeColor: 'bg-red-600',
-  },
-  {
-    id: '5',
-    name: 'Zen Balance',
-    series: 'Minimalist Decor',
-    price: 42.00,
-    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBZ1PBfAE415TqocgO8wMHZUTq04xhJuDjMVUFD77f2NuS5LSjrJg7t8f_9HqixXcleWoSlzjjJjD_BR3WX3qyuCxxBDkTjYdLuL2F7qHcdliB34iRVqgNNnEWulEqbP08hwjLW7C4AWJSjzoOUVeVJQzaVZV1q4kFwePzlOwTmY_mpslLHSFHtSc7sAGM614KPf8qBAV0oqgKWK5h8vRyjkj3BfY5F1xrzoAl7RNUyiAIXdNJ-b0QrYaUt70FYmPJC79w7P66Zjg',
-  },
-];
+const postersPerPage = 8;
+
+const clampPage = (value: number, pageCount: number) => {
+  if (Number.isNaN(value) || value < 1) return 1;
+  return Math.min(value, pageCount);
+};
 
 export default function HomePage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const catalogRef = useRef<HTMLDivElement | null>(null);
+  const isFirstRender = useRef(true);
+  const { data: posters = [], isLoading } = useProducts();
+  const selectedCollection = getStorefrontCollectionBySlug(searchParams.get('collection'));
+  const searchQuery = getStorefrontSearchQuery(searchParams.get('q'));
+  const selectedSort = getStorefrontSortBySlug(searchParams.get('sort'));
+  const [mobileSearch, setMobileSearch] = useState(searchQuery);
+  const selectedPrintSizes = useMemo(
+    () => getStorefrontPrintSizes(searchParams.getAll('size')),
+    [searchParams],
+  );
+  const selectedOrientation = getStorefrontOrientationBySlug(
+    searchParams.get('orientation'),
+  );
+  const hasActiveCatalogFilters =
+    selectedPrintSizes.length > 0 || selectedOrientation !== null;
+  const hasActiveDiscoveryControls = hasActiveCatalogFilters || searchQuery.length > 0;
+  const collectionFilteredPosters = useMemo(
+    () =>
+      posters.filter((poster) =>
+        matchesStorefrontCatalogFilters(poster, {
+          collectionSlug: selectedCollection.slug,
+          sizeSlugs: selectedPrintSizes,
+          orientation: selectedOrientation,
+        }),
+      ),
+    [posters, selectedCollection.slug, selectedOrientation, selectedPrintSizes],
+  );
+  const searchedPosters = useMemo(
+    () => filterStorefrontProductsBySearch(collectionFilteredPosters, searchQuery),
+    [collectionFilteredPosters, searchQuery],
+  );
+  const filteredPosters = useMemo(
+    () => sortStorefrontProducts(searchedPosters, selectedSort),
+    [searchedPosters, selectedSort],
+  );
+  const pageCount = Math.max(1, Math.ceil(filteredPosters.length / postersPerPage));
+  const currentPage = clampPage(Number.parseInt(searchParams.get('page') ?? '1', 10), pageCount);
+  const currentPosters = useMemo(() => {
+    const start = (currentPage - 1) * postersPerPage;
+    return filteredPosters.slice(start, start + postersPerPage);
+  }, [currentPage, filteredPosters]);
+  const pageNumbers = Array.from({ length: pageCount }, (_, index) => index + 1);
+  const visibleStart = filteredPosters.length === 0 ? 0 : (currentPage - 1) * postersPerPage + 1;
+  const visibleEnd = filteredPosters.length === 0 ? 0 : Math.min(currentPage * postersPerPage, filteredPosters.length);
+
+  useEffect(() => {
+    setMobileSearch(searchQuery);
+  }, [searchQuery]);
+
+  usePageMetadata({
+    title:
+      searchQuery
+        ? `${selectedCollection.heading} search for "${searchQuery}" | BleedPrints`
+        : selectedCollection.slug === defaultStorefrontCollection.slug
+          ? 'BleedPrints | Curated Wall Art And Collectible Posters'
+          : `${selectedCollection.heading} | BleedPrints`,
+    description:
+      searchQuery
+        ? `Search the BleedPrints catalog for ${searchQuery} and browse matching wall art, poster styles, and curated print details.`
+        : selectedCollection.slug === defaultStorefrontCollection.slug
+          ? 'Browse curated wall art, collectible posters, and design-led prints from the BleedPrints catalog.'
+          : `Browse ${selectedCollection.label.toLowerCase()} from the BleedPrints catalog, with live collection filtering and curated poster detail pages.`,
+    path: selectedCollection.slug === defaultStorefrontCollection.slug ? '/' : '/shop',
+  });
+
+  useEffect(() => {
+    const requestedPage = searchParams.get('page');
+    if (requestedPage === null && currentPage === 1) return;
+    if (requestedPage === `${currentPage}`) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    if (currentPage === 1) {
+      nextParams.delete('page');
+    } else {
+      nextParams.set('page', `${currentPage}`);
+    }
+    setSearchParams(nextParams, { replace: true });
+  }, [currentPage, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    catalogRef.current?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    });
+  }, [currentPage, searchQuery, selectedCollection.slug, selectedOrientation, selectedPrintSizes, selectedSort]);
+
+  const updateCollection = (collectionSlug: typeof selectedCollection.slug) => {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (collectionSlug === defaultStorefrontCollection.slug) {
+      nextParams.delete('collection');
+    } else {
+      nextParams.set('collection', collectionSlug);
+    }
+
+    nextParams.delete('page');
+    setSearchParams(nextParams);
+  };
+
+  const updatePage = (page: number) => {
+    const safePage = clampPage(page, pageCount);
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (safePage === 1) {
+      nextParams.delete('page');
+    } else {
+      nextParams.set('page', `${safePage}`);
+    }
+
+    setSearchParams(nextParams);
+  };
+
+  const updateSearchQuery = (query: string) => {
+    const nextParams = new URLSearchParams(searchParams);
+    const normalizedQuery = query.trim();
+
+    if (normalizedQuery) {
+      nextParams.set('q', normalizedQuery);
+    } else {
+      nextParams.delete('q');
+    }
+
+    nextParams.delete('page');
+    setSearchParams(nextParams);
+  };
+
+  const updatePrintSizes = (sizeSlugs: StorefrontPrintSizeSlug[]) => {
+    const nextParams = new URLSearchParams(searchParams);
+
+    nextParams.delete('size');
+    sizeSlugs.forEach((sizeSlug) => {
+      nextParams.append('size', sizeSlug);
+    });
+    nextParams.delete('page');
+
+    setSearchParams(nextParams);
+  };
+
+  const togglePrintSize = (sizeSlug: StorefrontPrintSizeSlug) => {
+    const nextSizeSlugs = selectedPrintSizes.includes(sizeSlug)
+      ? selectedPrintSizes.filter((selectedSize) => selectedSize !== sizeSlug)
+      : [...selectedPrintSizes, sizeSlug];
+
+    updatePrintSizes(nextSizeSlugs);
+  };
+
+  const updateOrientation = (orientation: StorefrontOrientation) => {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (selectedOrientation === orientation) {
+      nextParams.delete('orientation');
+    } else {
+      nextParams.set('orientation', orientation);
+    }
+
+    nextParams.delete('page');
+    setSearchParams(nextParams);
+  };
+
+  const updateSort = (sort: StorefrontSortSlug) => {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (sort === 'featured') {
+      nextParams.delete('sort');
+    } else {
+      nextParams.set('sort', sort);
+    }
+
+    nextParams.delete('page');
+    setSearchParams(nextParams);
+  };
+
+  const clearCatalogFilters = () => {
+    const nextParams = new URLSearchParams(searchParams);
+
+    nextParams.delete('size');
+    nextParams.delete('orientation');
+    nextParams.delete('page');
+
+    setSearchParams(nextParams);
+  };
+
+  const activeCatalogFilterLabels = useMemo(
+    () => [
+      ...(searchQuery ? [`Search: ${searchQuery}`] : []),
+      ...selectedPrintSizes.map(
+        (sizeSlug) =>
+          storefrontPrintSizeFilters.find((filter) => filter.slug === sizeSlug)?.label ??
+          sizeSlug.toUpperCase(),
+      ),
+      ...(selectedOrientation
+        ? [
+            storefrontOrientationFilters.find(
+              (filter) => filter.slug === selectedOrientation,
+            )?.label ?? selectedOrientation,
+          ]
+        : []),
+    ],
+    [searchQuery, selectedOrientation, selectedPrintSizes],
+  );
+
+  const handleMobileSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    updateSearchQuery(mobileSearch);
+  };
+
+  const emptyStateCopy = searchQuery
+    ? 'No products match the current search, collection, print size, and orientation settings yet.'
+    : 'No products match the current collection, print size, and orientation filters yet.';
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
       <main className="pt-24 flex-1">
         <div className="max-w-[1440px] mx-auto flex gap-0">
-          <Sidebar />
+          <Sidebar
+            selectedCollection={selectedCollection.slug}
+            selectedOrientation={selectedOrientation}
+            selectedPrintSizes={selectedPrintSizes}
+            hasActiveCatalogFilters={hasActiveCatalogFilters}
+            onClearCatalogFilters={clearCatalogFilters}
+            onSelectCollection={updateCollection}
+            onSelectOrientation={updateOrientation}
+            onTogglePrintSize={togglePrintSize}
+          />
           <section className="flex-1 bg-surface-container-low p-8">
-            {/* Hero Bento */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
-              <div className="md:col-span-2 relative rounded-2xl overflow-hidden h-72 group">
-                <img
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuDAK98PjORcpS3_6lKNBIL4YlZ-M7RfX5OB1LAURdNnsXSCl9CtVqYrzyAYJtQ9Zabra3BFjDAjBT1RbLsJf1Kl00cIYYgk5zrM1NlSOdwHe8rQ4jVMn2Lv2DOZDq51Vx0NWuMsjv_SMpt1ggDKMWXA7_Vt9H5cetvUYy6PQ3OeDSunUn5ArN9vD8pLZbNo7EkA8Cz17mcET96OGclBL-SPlYv-kKtmZNfO3llwDdHbnkQ1rBaB1c38snwCeLOXH2ntrEnQQ_uR6A"
-                  alt="Summer Solstice Collection"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                <div className="absolute bottom-8 left-8 text-white">
-                  <span className="text-xs font-bold uppercase tracking-widest opacity-80">Editor's Choice</span>
-                  <h2 className="text-3xl font-headline font-extrabold tracking-tight mt-2">
-                    The Summer<br />Solstice Collection
-                  </h2>
+            {/* Product Grid Header */}
+            <div ref={catalogRef} className="flex flex-wrap items-end justify-between gap-4 mb-8 scroll-mt-32">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="rounded-full bg-surface-container-lowest px-3 py-1 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                    Catalog
+                  </span>
                   <Link
-                    to="/shop"
-                    className="mt-4 inline-block bg-cta-gradient text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity"
+                    to="/series/summer-solstice"
+                    className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-secondary transition-colors hover:text-on-surface"
                   >
-                    Explore Series
+                    Editor&apos;s Choice
+                    <MaterialIcon icon="north_east" className="text-sm" />
                   </Link>
                 </div>
-              </div>
-              <div className="relative rounded-2xl overflow-hidden h-72 group">
-                <img
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuANGYuRyaVRzRYkV99qxoG95dZFaJpbPcI1m32fmgHA2G4DuTSz9g9czlYF6OmZLQ-dCqFn7MNCQZdEb-JNCNLuIpMeAICgsvYv8ARaw6IQV8aa2HpVdS6qjnwS5OblCDR93Xh2YGz88S9sZyajUHbQ6N40Jnsj6lw67L7n2vewME0V7s9CTLBw1cYkzibXbJI3NbsFzTMZQzpnEbM4ydDPr74RFvf3YBRIZkxdKC_P4O23FXupxEhvqJNQWupb3pSVtU9RpiA1uQ"
-                  alt="Featured art"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-              </div>
-            </div>
-
-            {/* Product Grid Header */}
-            <div className="flex flex-wrap items-end justify-between mb-8">
-              <div>
-                <h2 className="text-3xl font-headline font-extrabold tracking-tight">Abstract Originals</h2>
-                <p className="text-on-surface-variant text-sm mt-1">Showing 124 curated results</p>
+                <h2 className="text-3xl font-headline font-extrabold tracking-tight">
+                  {selectedCollection.heading}
+                </h2>
+                <p className="text-on-surface-variant text-sm mt-1">
+                  Showing {visibleStart}-{visibleEnd} of {filteredPosters.length} curated results
+                  {searchQuery ? ` for "${searchQuery}"` : ''}
+                </p>
+                <form
+                  onSubmit={handleMobileSearchSubmit}
+                  className="flex items-center gap-2 rounded-2xl bg-surface-container-lowest p-2 md:hidden"
+                  role="search"
+                >
+                  <MaterialIcon icon="search" className="text-on-surface-variant" />
+                  <input
+                    className="min-w-0 flex-1 bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant"
+                    placeholder="Search the catalog..."
+                    value={mobileSearch}
+                    onChange={(event) => setMobileSearch(event.target.value)}
+                    aria-label="Search the poster catalog"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileSearch('');
+                        updateSearchQuery('');
+                      }}
+                      className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-secondary"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </form>
+                {hasActiveDiscoveryControls && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {activeCatalogFilterLabels.map((label) => (
+                      <span
+                        key={label}
+                        className="rounded-full bg-surface-container-lowest px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-on-surface-variant"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                    {hasActiveCatalogFilters && (
+                      <button
+                        type="button"
+                        onClick={clearCatalogFilters}
+                        className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary transition-colors hover:text-on-surface"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileSearch('');
+                          updateSearchQuery('');
+                        }}
+                        className="text-[10px] font-bold uppercase tracking-[0.18em] text-secondary transition-colors hover:text-on-surface"
+                      >
+                        Clear search
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Sort by</span>
-                <select className="bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2 text-sm font-medium focus:ring-1 focus:ring-primary">
-                  <option>Newest Arrivals</option>
-                  <option>Price: Low to High</option>
-                  <option>Price: High to Low</option>
+                <select
+                  value={selectedSort}
+                  onChange={(event) => updateSort(event.target.value as StorefrontSortSlug)}
+                  className="bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2 text-sm font-medium focus:ring-1 focus:ring-primary"
+                  aria-label="Sort catalog results"
+                >
+                  {storefrontSortOptions.map((option) => (
+                    <option key={option.slug} value={option.slug}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
 
             {/* Product Grid */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-              {posters.map(poster => (
-                <Link key={poster.id} to={`/poster/${poster.id}`} className="group">
+              {isLoading && (
+                Array.from({ length: 8 }, (_, index) => (
+                  <div key={index} className="animate-pulse">
+                    <div className="aspect-[3/4] rounded-xl bg-surface-container mb-3" />
+                    <div className="space-y-2">
+                      <div className="h-4 rounded bg-surface-container w-3/4" />
+                      <div className="h-3 rounded bg-surface-container w-1/2" />
+                    </div>
+                  </div>
+                ))
+              )}
+              {currentPosters.map((poster) => (
+                <Link key={poster.slug} to={`/poster/${poster.slug}`} className="group">
                   <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-surface-container mb-3">
                     <img
-                      src={poster.image}
-                      alt={poster.name}
+                      src={poster.imageSet.primary.src}
+                      alt={poster.imageSet.primary.alt}
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                     />
                     {poster.badge && (
-                      <span className={`absolute bottom-3 left-3 px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded ${poster.badgeColor || 'bg-surface-container-lowest/90 text-on-surface'}`}>
+                      <span className={`absolute bottom-3 left-3 px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded ${poster.badgeClassName || 'bg-surface-container-lowest/90 text-on-surface'}`}>
                         {poster.badge}
                       </span>
                     )}
                   </div>
                   <div className="flex justify-between items-start">
                     <div>
-                      <h3 className="font-headline font-bold text-sm">{poster.name}</h3>
-                      <p className="text-xs text-on-surface-variant">{poster.series}</p>
+                      <h3 className="font-headline font-bold text-sm">{poster.title}</h3>
+                      <p className="text-xs text-on-surface-variant">{poster.collection}</p>
                     </div>
-                    <span className="font-headline font-bold text-sm">${poster.price.toFixed(2)}</span>
+                    <span className="font-headline font-bold text-sm">{formatMoney(poster.pricing.amount, poster.pricing.currencyCode)}</span>
                   </div>
                 </Link>
               ))}
             </div>
 
+            {!isLoading && filteredPosters.length === 0 && (
+              <div className="rounded-2xl bg-surface-container-lowest p-8 text-center text-on-surface-variant mb-12">
+                {emptyStateCopy}
+              </div>
+            )}
+
             {/* Pagination */}
             <div className="flex justify-center gap-2">
-              <button className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-dim">
+              <button
+                type="button"
+                onClick={() => updatePage(currentPage - 1)}
+                disabled={currentPage === 1 || filteredPosters.length === 0}
+                className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-dim disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Go to previous page"
+              >
                 <MaterialIcon icon="chevron_left" />
               </button>
-              {[1, 2, 3].map(n => (
+              {pageNumbers.map((pageNumber) => (
                 <button
-                  key={n}
+                  key={pageNumber}
+                  type="button"
+                  onClick={() => updatePage(pageNumber)}
+                  aria-current={pageNumber === currentPage ? 'page' : undefined}
                   className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold ${
-                    n === 1 ? 'bg-inverse-surface text-inverse-on-surface' : 'bg-surface-container text-on-surface-variant hover:bg-surface-dim'
+                    pageNumber === currentPage
+                      ? 'bg-inverse-surface text-inverse-on-surface'
+                      : 'bg-surface-container text-on-surface-variant hover:bg-surface-dim'
                   }`}
                 >
-                  {n}
+                  {pageNumber}
                 </button>
               ))}
-              <span className="w-10 h-10 flex items-center justify-center text-on-surface-variant">...</span>
-              <button className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-sm font-bold text-on-surface-variant hover:bg-surface-dim">24</button>
-              <button className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-dim">
+              <button
+                type="button"
+                onClick={() => updatePage(currentPage + 1)}
+                disabled={currentPage === pageCount || filteredPosters.length === 0}
+                className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-dim disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Go to next page"
+              >
                 <MaterialIcon icon="chevron_right" />
               </button>
             </div>

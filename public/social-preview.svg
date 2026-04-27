@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
+  <rect width="1200" height="630" fill="#efe4da"/>
+  <rect x="58" y="58" width="1084" height="514" rx="32" fill="#1e1a17"/>
+  <rect x="104" y="104" width="344" height="422" rx="24" fill="#d9a169"/>
+  <rect x="474" y="104" width="240" height="184" rx="20" fill="#b4c7d9"/>
+  <rect x="740" y="104" width="356" height="184" rx="20" fill="#6c4f45"/>
+  <rect x="474" y="314" width="622" height="212" rx="20" fill="#f4ede7"/>
+  <text x="504" y="382" fill="#1e1a17" font-family="Manrope, Arial, sans-serif" font-size="68" font-weight="800">BleedPrints</text>
+  <text x="504" y="438" fill="#5a514b" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="500">Curated wall art. Collectible poster drops.</text>
+  <text x="504" y="478" fill="#5a514b" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="500">Custom checkout. CMS-ready catalog.</text>
+  <text x="104" y="566" fill="#f4ede7" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="600" letter-spacing="4">DESIGN-LED ECOMMERCE STOREFRONT</text>
+</svg>

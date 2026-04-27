@@ -1,149 +1,215 @@
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import MaterialIcon from '@/components/MaterialIcon';
+import { useAuth } from '@/context/AuthContext';
+import { useOrders } from '@/hooks/use-orders';
+import { formatMoney } from '@/lib/money';
+import { usePageMetadata } from '@/lib/seo';
 
-const orders = [
-  {
-    id: 'AB-92841',
-    date: 'October 14, 2023',
-    total: '$245.00',
-    shipTo: 'Jonathan Reed',
-    status: 'delivered',
-    statusLabel: 'Delivered Oct 18',
-    items: [
-      { name: 'The Brutalist Monolith No. 4', size: 'A2 (42.0 x 59.4 cm)', price: '$120.00', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBtPoTOJlO9IAbbCNprkPKFlTGCBQK-PS10p6YYuOwNZdQiMK_d90oHxIKGdYV8Hb3y4dMsOxtkTGrqbgCDxUTM9Ec_p0fS1izJ9m0qCQHw3SnO9uQxg-2CxW8mo2CAlbVkJYuBjwELvwlmLos4eSA9PPXToS9hQzRrHIHz23heicWv0_LCPsm9Gn4KhItBeKIMD9YlrswfjG4jl56r43V64IAc8zzRTuBWOnM7GxCQLIbuG2zskNyMTtVRKtatAkTw7bQ0AXEqhg' },
-      { name: 'Geometric Flow Study', size: 'A3 (29.7 x 42.0 cm)', price: '$125.00', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuATh0jwkiSjf7PYQk2GGvsIcCdtJx8rYkX1jazhwjHsydnQyXdcIbrD8MKMxpsO3CaNDx4UBJUtVGnpUeytP-juFl9aCk1Jc_ycz3UrUSDk1T9AVGsKy6kVTbz_GyvSWNV3kt9rKmNoRWuvdgwvI5iOnFxXm4MNkSCMS4bKce03mYCP_aY3E1UI9d5sbEjk2H0pkDzUiaHN0ndkWwkAhVHCMhWqRwF4V-fXaDQ20twGf6uOMvD8tAMj06dp1xHU-gxJOcinMcdNmg' },
-    ],
-    actions: ['Track Package', 'Return or replace items', 'Write a product review'],
-  },
-  {
-    id: 'AB-93102',
-    date: 'October 28, 2023',
-    total: '$85.00',
-    status: 'transit',
-    statusLabel: 'In Transit - Arriving Thursday',
-    items: [
-      { name: 'The Dessau Legacy', size: 'A4 (21.0 x 29.7 cm)', price: '$85.00', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD-zQwo0j3zlbvs6TzhLj4jNyMCJyugjn_2oR2RcNDQpUQRx9kFiv9zB5RmNOVwIGowPXebDEFq3keHmtwq3QTivEeLTNpVILYYopSCM9opeKaZQPouCamJOkXFlOTKRX3N-vjImqTd058o8s27fmQj6ukiHb7gelsqphJTOAGCKmVfu2VDJRCOYYP0wCMzUnnVwggf9xGoku0SE62x6hiWY49oB6nZ308ugJ1Th8jPCVd6pZp_Bzzzh4r8FDEDvNk4q16vv2LCZQ' },
-    ],
-    actions: ['Track Package', 'Edit Delivery Instructions'],
-  },
-  {
-    id: 'AB-91004',
-    date: 'September 02, 2023',
-    total: '$0.00 (Refunded)',
-    status: 'cancelled',
-    statusLabel: 'Cancelled',
-    items: [
-      { name: 'Serene Tonalities', size: 'A2 (42.0 x 59.4 cm)', price: '$110.00', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuA6B1WFplu9CoUeQ6TZkWTNFjE7xEzVITxqnG6qLb7-co8kn4PulSIZfH2Li6MiGYtNl3HQventLJCbf6_PqAEOGdRr09q4ZZ-30_Jbp44yDADq8z82bRe3pnuzzpjUszWnA3e6rWKqo8-mn5UcUnEKOjn6D4wMBXUic2lLFp_kMNTiqSum8t1BmyhJCAUhBxQ3wgtPcmG77NPtJyP_TL3g506OHD3cnTycggJAkoPHAUtdRta4gK01Y71VMJZmyPfv6dK13d-hfg' },
-    ],
-    actions: ['View Refund Status', 'Re-order Item'],
-  },
-];
+const orderStatusCopy = {
+  created: 'Order created',
+  payment_pending: 'Payment pending',
+  payment_authorized: 'Payment authorized',
+  paid: 'Paid',
+  failed: 'Payment failed',
+  cancelled: 'Cancelled',
+  fulfilled: 'Delivered',
+} as const;
+
+const deliveryCopy = {
+  standard: 'Standard shipping',
+  express: 'Express courier',
+} as const;
 
 export default function OrderHistoryPage() {
+  const { profile, user } = useAuth();
+  const { data: orders = [], isLoading } = useOrders(user?.id);
+
+  usePageMetadata({
+    title: 'My Orders | BleedPrints',
+    description: 'View live order history, delivery details, and purchased poster line items linked to your account.',
+    path: '/orders',
+    noIndex: true,
+  });
+
+  const formatOrderDate = (value: string) =>
+    new Intl.DateTimeFormat('en-US', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date(value));
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
       <main className="pt-32 pb-20 px-4 md:px-8 max-w-screen-xl mx-auto flex-1 min-h-screen">
         <header className="mb-10">
           <h1 className="text-4xl font-extrabold font-headline tracking-tighter mb-2">My Orders</h1>
-          <p className="text-secondary font-medium">Track, manage and rediscover your curated architectural collection.</p>
+          <p className="text-secondary font-medium">
+            Track, manage, and review the live orders linked to {profile?.email || 'your account'}.
+          </p>
         </header>
 
         <div className="mb-8 flex flex-wrap gap-4 items-center">
-          <div className="text-sm font-semibold uppercase tracking-widest text-secondary">Displaying {orders.length} orders</div>
+          <div className="text-sm font-semibold uppercase tracking-widest text-secondary">
+            {isLoading ? 'Loading orders…' : `Displaying ${orders.length} orders`}
+          </div>
           <div className="ml-auto">
-            <select className="bg-surface-container border-none rounded-md text-sm px-4 py-2 focus:ring-1 focus:ring-primary">
-              <option>Last 3 months</option>
-              <option>2023</option>
-              <option>2022</option>
-            </select>
+            <div className="rounded-md bg-surface-container px-4 py-2 text-sm text-on-surface-variant">
+              Signed in as {profile?.fullName || profile?.email || 'collector'}
+            </div>
           </div>
         </div>
 
+        {isLoading && (
+          <div className="space-y-8">
+            {Array.from({ length: 2 }, (_, index) => (
+              <div key={index} className="animate-pulse rounded-xl bg-surface-container-lowest p-8">
+                <div className="h-5 w-52 rounded bg-surface-container" />
+                <div className="mt-4 h-4 w-32 rounded bg-surface-container" />
+                <div className="mt-8 h-28 rounded bg-surface-container" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!isLoading && orders.length === 0 && (
+          <div className="rounded-[1.5rem] bg-surface-container-lowest p-10 text-center shadow-sm">
+            <MaterialIcon icon="inventory_2" className="mx-auto text-5xl text-outline-variant" />
+            <h2 className="mt-5 text-2xl font-headline font-bold text-on-surface">
+              No live orders yet
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-on-surface-variant">
+              Orders placed while signed into this account will appear here automatically once payment is completed.
+            </p>
+          </div>
+        )}
+
         <div className="space-y-8">
-          {orders.map(order => (
+          {orders.map((order) => (
             <div
               key={order.id}
               className={`bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm transition-all hover:shadow-md ${
-                order.status === 'cancelled' ? 'border border-destructive/20' : ''
+                order.status === 'cancelled' || order.status === 'failed'
+                  ? 'border border-destructive/20'
+                  : ''
               }`}
             >
-              {/* Order Header */}
               <div className={`p-4 md:px-8 flex flex-wrap justify-between items-center gap-4 ${
-                order.status === 'cancelled' ? 'bg-destructive/5' : 'bg-surface-container'
+                order.status === 'cancelled' || order.status === 'failed'
+                  ? 'bg-destructive/5'
+                  : 'bg-surface-container'
               }`}>
                 <div className="flex gap-10">
                   <div>
                     <div className="text-[10px] uppercase tracking-widest text-secondary font-bold">Order Placed</div>
-                    <div className="text-sm font-semibold">{order.date}</div>
+                    <div className="text-sm font-semibold">{formatOrderDate(order.createdAt)}</div>
                   </div>
                   <div>
                     <div className="text-[10px] uppercase tracking-widest text-secondary font-bold">Total</div>
-                    <div className={`text-sm font-semibold ${order.status === 'cancelled' ? 'text-destructive' : ''}`}>{order.total}</div>
-                  </div>
-                  {order.shipTo && (
-                    <div className="hidden sm:block">
-                      <div className="text-[10px] uppercase tracking-widest text-secondary font-bold">Ship To</div>
-                      <div className="text-sm font-semibold text-secondary">{order.shipTo}</div>
+                    <div className={`text-sm font-semibold ${
+                      order.status === 'cancelled' || order.status === 'failed'
+                        ? 'text-destructive'
+                        : ''
+                    }`}>
+                      {formatMoney(order.totalAmount, order.currencyCode)}
                     </div>
-                  )}
+                  </div>
+                  <div className="hidden sm:block">
+                    <div className="text-[10px] uppercase tracking-widest text-secondary font-bold">Delivery</div>
+                    <div className="text-sm font-semibold text-secondary">
+                      {deliveryCopy[order.deliveryMethod]}
+                    </div>
+                  </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-[10px] uppercase tracking-widest text-secondary font-bold">Order #{order.id}</div>
-                  <button className="text-xs font-semibold text-primary hover:underline mt-1">Order Details</button>
+                  <div className="text-[10px] uppercase tracking-widest text-secondary font-bold">Order #{order.orderNumber}</div>
+                  <div className="mt-1 text-xs font-semibold text-secondary">
+                    Payment: {order.paymentStatus.replace(/_/g, ' ')}
+                  </div>
                 </div>
               </div>
 
-              {/* Order Content */}
               <div className="p-6 md:p-8">
                 <div className="flex flex-col md:flex-row gap-8">
                   <div className="flex-grow space-y-8">
                     <div className="flex items-center gap-3">
                       <MaterialIcon
-                        icon={order.status === 'delivered' ? 'check_circle' : order.status === 'transit' ? 'local_shipping' : 'cancel'}
+                        icon={
+                          order.status === 'fulfilled'
+                            ? 'check_circle'
+                            : order.status === 'paid' || order.status === 'payment_authorized'
+                              ? 'local_shipping'
+                              : order.status === 'failed' || order.status === 'cancelled'
+                                ? 'cancel'
+                                : 'schedule'
+                        }
                         filled
-                        className={`text-lg ${order.status === 'cancelled' ? 'text-destructive' : 'text-tertiary'}`}
+                        className={`text-lg ${
+                          order.status === 'cancelled' || order.status === 'failed'
+                            ? 'text-destructive'
+                            : 'text-tertiary'
+                        }`}
                       />
-                      <span className={`text-lg font-bold font-headline tracking-tight ${order.status === 'cancelled' ? 'text-destructive' : ''}`}>
-                        {order.statusLabel}
+                      <span className={`text-lg font-bold font-headline tracking-tight ${
+                        order.status === 'cancelled' || order.status === 'failed'
+                          ? 'text-destructive'
+                          : ''
+                      }`}>
+                        {orderStatusCopy[order.status]}
                       </span>
                     </div>
-                    {order.items.map((item, i) => (
-                      <div key={i} className="flex gap-6 items-start">
+                    {order.items.map((item) => (
+                      <div key={item.id} className="flex gap-6 items-start">
                         <div className="w-24 h-32 bg-surface-container-low rounded overflow-hidden flex-shrink-0">
-                          <img src={item.image} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 hover:scale-110" />
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover transition-transform duration-500 hover:scale-110" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-outline-variant">
+                              <MaterialIcon icon="image" className="text-3xl" />
+                            </div>
+                          )}
                         </div>
                         <div className="flex-grow">
-                          <h3 className="font-headline font-bold text-lg mb-1">{item.name}</h3>
-                          <p className="text-sm text-secondary mb-2">Size: <span className="font-semibold text-on-surface">{item.size}</span></p>
-                          <div className={`font-bold ${order.status === 'cancelled' ? 'text-outline line-through' : 'text-tertiary'}`}>{item.price}</div>
-                          {order.status === 'delivered' && (
-                            <button className="mt-4 bg-cta-gradient text-white px-6 py-2 rounded-md text-sm font-semibold shadow-sm hover:opacity-90 transition-all flex items-center gap-2">
-                              <MaterialIcon icon="replay" className="text-sm" /> Buy it again
-                            </button>
-                          )}
+                          <h3 className="font-headline font-bold text-lg mb-1">{item.title}</h3>
+                          <p className="text-sm text-secondary mb-2">
+                            Size: <span className="font-semibold text-on-surface">{item.dimensionLabel}</span>
+                          </p>
+                          <p className="text-sm text-secondary mb-2">
+                            Frame: <span className="font-semibold text-on-surface">{item.frame}</span>
+                          </p>
+                          <div className={`font-bold ${
+                            order.status === 'cancelled' || order.status === 'failed'
+                              ? 'text-outline line-through'
+                              : 'text-tertiary'
+                          }`}>
+                            {formatMoney(item.lineTotal, order.currencyCode)}
+                          </div>
                         </div>
                       </div>
                     ))}
                   </div>
 
-                  {/* Actions */}
                   <div className="flex flex-col gap-3 md:w-56 flex-shrink-0">
-                    {order.actions.map((action, i) => (
-                      <button
-                        key={i}
-                        className={`w-full py-3 rounded-lg text-sm font-semibold transition-all ${
-                          i === 0
-                            ? 'bg-cta-gradient text-white hover:opacity-90'
-                            : order.status === 'cancelled' && i === 1
-                            ? 'bg-destructive text-white hover:opacity-90'
-                            : 'bg-surface-container-high text-on-surface hover:bg-surface-dim'
-                        }`}
-                      >
-                        {action}
-                      </button>
-                    ))}
+                    <div className="rounded-xl bg-surface-container-high p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-secondary">
+                        Ship To
+                      </p>
+                      <p className="mt-3 whitespace-pre-line text-sm leading-6 text-on-surface">
+                        {[
+                          order.shippingAddress.line1,
+                          order.shippingAddress.line2,
+                          [order.shippingAddress.city, order.shippingAddress.state]
+                            .filter(Boolean)
+                            .join(', '),
+                          [order.shippingAddress.postalCode, order.shippingAddress.country]
+                            .filter(Boolean)
+                            .join(' • '),
+                        ]
+                          .filter(Boolean)
+                          .join('\n')}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

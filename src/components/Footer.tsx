@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom';
 import MaterialIcon from './MaterialIcon';
 
 export default function Footer() {
+  const year = new Date().getFullYear();
+
   return (
     <footer className="bg-surface-container-highest mt-auto">
       <div className="max-w-screen-xl mx-auto px-8 py-16 grid grid-cols-1 md:grid-cols-4 gap-12">
@@ -20,40 +22,37 @@ export default function Footer() {
           <h4 className="font-headline font-bold text-xs uppercase tracking-widest mb-4">Shop & Help</h4>
           <ul className="space-y-2 text-sm text-on-surface-variant">
             <li><Link to="/orders" className="hover:text-on-surface transition-colors">Track Order</Link></li>
-            <li><a href="#" className="hover:text-on-surface transition-colors">Shipping Policy</a></li>
-            <li><a href="#" className="hover:text-on-surface transition-colors">FAQ</a></li>
-            <li><a href="#" className="hover:text-on-surface transition-colors">Returns</a></li>
+            <li><Link to="/shipping-policy" className="hover:text-on-surface transition-colors">Shipping Policy</Link></li>
+            <li><Link to="/faq" className="hover:text-on-surface transition-colors">FAQ</Link></li>
+            <li><Link to="/returns" className="hover:text-on-surface transition-colors">Returns</Link></li>
           </ul>
         </div>
         <div>
           <h4 className="font-headline font-bold text-xs uppercase tracking-widest mb-4">About Us</h4>
           <ul className="space-y-2 text-sm text-on-surface-variant">
-            <li><a href="#" className="hover:text-on-surface transition-colors">Sustainability</a></li>
-            <li><a href="#" className="hover:text-on-surface transition-colors">Our Studio</a></li>
-            <li><a href="#" className="hover:text-on-surface transition-colors">Artists</a></li>
-            <li><a href="#" className="hover:text-on-surface transition-colors">Journal</a></li>
+            <li><Link to="/sustainability" className="hover:text-on-surface transition-colors">Sustainability</Link></li>
+            <li><Link to="/studio" className="hover:text-on-surface transition-colors">Our Studio</Link></li>
+            <li><Link to="/artists" className="hover:text-on-surface transition-colors">Artists</Link></li>
+            <li><Link to="/journal" className="hover:text-on-surface transition-colors">Journal</Link></li>
           </ul>
         </div>
         <div>
           <h4 className="font-headline font-bold text-xs uppercase tracking-widest mb-4">Join the Curation</h4>
-          <p className="text-sm text-on-surface-variant mb-4">Get early access to drops and styling tips.</p>
-          <div className="flex gap-2">
-            <input
-              className="flex-1 bg-surface-container-lowest border border-outline-variant rounded-sm px-4 py-2 text-sm focus:ring-1 focus:ring-primary"
-              placeholder="Email"
-              type="email"
-            />
-            <button className="bg-inverse-surface text-inverse-on-surface px-4 py-2 rounded-sm text-sm font-bold hover:opacity-90 transition-opacity">
-              JOIN
-            </button>
-          </div>
+          <p className="text-sm text-on-surface-variant mb-4">Create an account to track orders, speed up checkout, and hear about future drops.</p>
+          <Link
+            to="/auth"
+            className="inline-flex items-center gap-2 bg-inverse-surface text-inverse-on-surface px-4 py-2 rounded-sm text-sm font-bold hover:opacity-90 transition-opacity"
+          >
+            Create Account
+            <MaterialIcon icon="arrow_forward" className="text-sm" />
+          </Link>
         </div>
       </div>
       <div className="border-t border-outline-variant/30 py-6 px-8 flex flex-wrap justify-between items-center max-w-screen-xl mx-auto text-xs text-on-surface-variant">
-        <p>© 2024 BleedPrints. All Rights Reserved.</p>
+        <p>© {year} BleedPrints. All Rights Reserved.</p>
         <div className="flex gap-6">
-          <a href="#" className="hover:text-on-surface">Terms of Service</a>
-          <a href="#" className="hover:text-on-surface">Privacy</a>
+          <Link to="/terms-of-service" className="hover:text-on-surface">Terms of Service</Link>
+          <Link to="/privacy" className="hover:text-on-surface">Privacy</Link>
         </div>
       </div>
     </footer>
