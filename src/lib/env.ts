@@ -1,5 +1,6 @@
 export const publicEnv = {
-  siteUrl: import.meta.env.VITE_PUBLIC_SITE_URL || "http://localhost:5173",
+  // siteUrl: import.meta.env.VITE_PUBLIC_SITE_URL || "http://localhost:5173",
+  siteUrl: import.meta.env.VITE_PUBLIC_SITE_URL || "https://zippy-truffle-bcaf25.netlify.app",
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL || "",
   supabasePublishableKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "",
   razorpayKeyId: import.meta.env.VITE_RAZORPAY_KEY_ID || "",
