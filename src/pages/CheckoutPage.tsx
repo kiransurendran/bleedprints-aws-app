@@ -123,6 +123,10 @@ export default function CheckoutPage() {
     }
 
     if (!supabase || !publicEnv.razorpayKeyId) {
+      console.log({
+        supabase: supabase || 'missing',
+        razorpayKeyId: publicEnv.razorpayKeyId || 'missing',
+      })
       toast({
         title: 'Checkout is not configured',
         description: 'Add Supabase and Razorpay environment variables before launching payments.',

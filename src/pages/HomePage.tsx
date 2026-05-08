@@ -101,7 +101,7 @@ export default function HomePage() {
         : selectedCollection.slug === defaultStorefrontCollection.slug
           ? 'Browse curated wall art, collectible posters, and design-led prints from the BleedPrints catalog.'
           : `Browse ${selectedCollection.label.toLowerCase()} from the BleedPrints catalog, with live collection filtering and curated poster detail pages.`,
-    path: selectedCollection.slug === defaultStorefrontCollection.slug ? '/' : '/shop',
+    path: '/collections',
   });
 
   useEffect(() => {

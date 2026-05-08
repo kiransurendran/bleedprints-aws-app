@@ -92,6 +92,7 @@ type AdminNotice = {
 };
 
 const NEW_PRODUCT_ID = "__new__";
+const NEW_COLLECTION_ID = "__new_collection__";
 
 type ProductFormDimension = {
   id: string;
@@ -137,6 +138,14 @@ type ProductFormState = {
   images: ProductFormImage[];
 };
 
+type CollectionFormState = {
+  slug: string;
+  title: string;
+  description: string;
+  sortOrder: string;
+  isActive: boolean;
+};
+
 const availabilityOptions: Array<ProductFormState["availabilityStatus"]> = [
   "in-stock",
   "low-stock",
@@ -145,6 +154,13 @@ const availabilityOptions: Array<ProductFormState["availabilityStatus"]> = [
 ];
 
 const currencyOptions: Array<ProductFormState["currencyCode"]> = ["INR", "USD"];
+
+const requiredDimensionPresets = [
+  { code: "a2", label: "A2", widthCm: "42", heightCm: "59.4" },
+  { code: "a3", label: "A3", widthCm: "29.7", heightCm: "42" },
+  { code: "a4", label: "A4", widthCm: "21", heightCm: "29.7" },
+  { code: "a5", label: "A5", widthCm: "14.8", heightCm: "21" },
+];
 
 const createDimensionDraft = (
   overrides: Partial<ProductFormDimension> = {},
@@ -190,23 +206,28 @@ const createEmptyProductForm = (defaultCollection = ""): ProductFormState => ({
   seoCanonicalPath: "",
   sortOrder: "0",
   isActive: true,
-  dimensions: [
+  dimensions: requiredDimensionPresets.map((dimension, index) =>
     createDimensionDraft({
-      code: "a4",
-      label: "A4",
-      widthCm: "21",
-      heightCm: "29.7",
+      ...dimension,
       amount: defaultCmsBasePrice,
       compareAtAmount: defaultCmsCompareAtPrice,
-      sortOrder: "0",
+      sortOrder: index.toString(),
     }),
-  ],
+  ),
   images: [
     createImageDraft({
       role: "primary",
       position: "0",
     }),
   ],
+});
+
+const createEmptyCollectionForm = (): CollectionFormState => ({
+  slug: "",
+  title: "",
+  description: "",
+  sortOrder: "0",
+  isActive: true,
 });
 
 function normalizeAdminError(error: unknown, fallback: string): string {
@@ -249,6 +270,46 @@ function normalizeAdminError(error: unknown, fallback: string): string {
 }
 
 function productToForm(entry: AdminCatalogEntry): ProductFormState {
+  const dimensionsByCode = new Map(
+    entry.dimensions.map((dimension) => [dimension.code.toLowerCase(), dimension]),
+  );
+  const requiredDimensions = requiredDimensionPresets.map((preset, index) => {
+    const dimension = dimensionsByCode.get(preset.code);
+
+    return createDimensionDraft({
+      id: dimension?.id,
+      code: dimension?.code ?? preset.code,
+      label: dimension?.label ?? preset.label,
+      widthCm: dimension?.width_cm.toString() ?? preset.widthCm,
+      heightCm: dimension?.height_cm.toString() ?? preset.heightCm,
+      amount: dimension?.amount.toString() ?? entry.product.base_price.toString(),
+      compareAtAmount:
+        dimension?.compare_at_amount?.toString() ??
+        entry.product.compare_at_price?.toString() ??
+        "",
+      sortOrder: dimension?.sort_order.toString() ?? index.toString(),
+    });
+  });
+  const customDimensions = entry.dimensions
+    .filter(
+      (dimension) =>
+        !requiredDimensionPresets.some(
+          (preset) => preset.code === dimension.code.toLowerCase(),
+        ),
+    )
+    .map((dimension) =>
+      createDimensionDraft({
+        id: dimension.id,
+        code: dimension.code,
+        label: dimension.label,
+        widthCm: dimension.width_cm.toString(),
+        heightCm: dimension.height_cm.toString(),
+        amount: dimension.amount.toString(),
+        compareAtAmount: dimension.compare_at_amount?.toString() ?? "",
+        sortOrder: dimension.sort_order.toString(),
+      }),
+    );
+
   return {
     slug: entry.product.slug,
     title: entry.product.title,
@@ -270,20 +331,7 @@ function productToForm(entry: AdminCatalogEntry): ProductFormState {
     seoCanonicalPath: entry.product.seo_canonical_path ?? "",
     sortOrder: entry.product.sort_order.toString(),
     isActive: entry.product.is_active,
-    dimensions: entry.dimensions.length
-      ? entry.dimensions.map((dimension) =>
-          createDimensionDraft({
-            id: dimension.id,
-            code: dimension.code,
-            label: dimension.label,
-            widthCm: dimension.width_cm.toString(),
-            heightCm: dimension.height_cm.toString(),
-            amount: dimension.amount.toString(),
-            compareAtAmount: dimension.compare_at_amount?.toString() ?? "",
-            sortOrder: dimension.sort_order.toString(),
-          }),
-        )
-      : [createDimensionDraft()],
+    dimensions: [...requiredDimensions, ...customDimensions],
     images: entry.images.length
       ? entry.images.map((image) =>
           createImageDraft({
@@ -296,6 +344,22 @@ function productToForm(entry: AdminCatalogEntry): ProductFormState {
         )
       : [createImageDraft({ role: "primary" })],
   };
+}
+
+function collectionToForm(collection: AdminCollectionRow): CollectionFormState {
+  return {
+    slug: collection.slug,
+    title: collection.title,
+    description: collection.description ?? "",
+    sortOrder: collection.sort_order.toString(),
+    isActive: collection.is_active,
+  };
+}
+
+function getPreviewImage(entry: AdminCatalogEntry) {
+  return (
+    entry.images.find((image) => image.role === "primary") ?? entry.images[0] ?? null
+  );
 }
 
 async function fetchAdminCatalog(): Promise<AdminCatalogEntry[]> {
@@ -346,7 +410,6 @@ async function fetchAdminCollections(): Promise<AdminCollectionRow[]> {
   const { data, error } = await supabase
     .from("collections")
     .select("id, slug, title, description, sort_order, is_active, created_at, updated_at")
-    .eq("is_active", true)
     .order("sort_order", { ascending: true })
     .order("title", { ascending: true });
 
@@ -365,8 +428,16 @@ export default function AdminCmsPage() {
   const queryClient = useQueryClient();
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [form, setForm] = useState<ProductFormState>(createEmptyProductForm);
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [collectionForm, setCollectionForm] = useState<CollectionFormState>(
+    createEmptyCollectionForm,
+  );
+  const [isCollectionModalOpen, setIsCollectionModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSavingCollection, setIsSavingCollection] = useState(false);
+  const [isDeletingCollection, setIsDeletingCollection] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [adminNotice, setAdminNotice] = useState<AdminNotice | null>(null);
 
@@ -397,7 +468,13 @@ export default function AdminCmsPage() {
     () => catalog.find((entry) => entry.product.id === selectedProductId) ?? null,
     [catalog, selectedProductId],
   );
+  const selectedCollection = useMemo(
+    () =>
+      collections.find((collection) => collection.id === selectedCollectionId) ?? null,
+    [collections, selectedCollectionId],
+  );
   const isCreatingNew = selectedProductId === NEW_PRODUCT_ID;
+  const isCreatingCollection = selectedCollectionId === NEW_COLLECTION_ID;
   const collectionOptions = useMemo(() => {
     const options = collections.map((collection) => collection.title);
     const currentCollection = form.collection.trim();
@@ -471,6 +548,30 @@ export default function AdminCmsPage() {
     }
   };
 
+  const openCreateProductModal = () => {
+    setSelectedProductId(NEW_PRODUCT_ID);
+    setForm(createEmptyProductForm(defaultCollectionTitle));
+    setIsProductModalOpen(true);
+  };
+
+  const openUpdateProductModal = (entry: AdminCatalogEntry) => {
+    setSelectedProductId(entry.product.id);
+    setForm(productToForm(entry));
+    setIsProductModalOpen(true);
+  };
+
+  const openCreateCollectionModal = () => {
+    setSelectedCollectionId(NEW_COLLECTION_ID);
+    setCollectionForm(createEmptyCollectionForm());
+    setIsCollectionModalOpen(true);
+  };
+
+  const openUpdateCollectionModal = (collection: AdminCollectionRow) => {
+    setSelectedCollectionId(collection.id);
+    setCollectionForm(collectionToForm(collection));
+    setIsCollectionModalOpen(true);
+  };
+
   const updateForm = <K extends keyof ProductFormState>(
     key: K,
     value: ProductFormState[K],
@@ -506,6 +607,25 @@ export default function AdminCmsPage() {
           : image,
       ),
     }));
+  };
+
+  const updateCollectionForm = <K extends keyof CollectionFormState>(
+    key: K,
+    value: CollectionFormState[K],
+  ) => {
+    setCollectionForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleCollectionTitleChange = (value: string) => {
+    setCollectionForm((current) => ({
+      ...current,
+      title: value,
+      slug: current.slug.trim() ? current.slug : slugifyProductTitle(value),
+    }));
+  };
+
+  const handleCollectionSlugChange = (value: string) => {
+    updateCollectionForm("slug", slugifyProductTitle(value));
   };
 
   const handleTitleChange = (value: string) => {
@@ -804,6 +924,7 @@ export default function AdminCmsPage() {
         description: `${form.title || form.slug} was saved successfully and is now available to the storefront query layer.`,
         variant: "default",
       });
+      setIsProductModalOpen(false);
     } catch (saveError) {
       console.error(saveError);
       const message = normalizeAdminError(
@@ -865,6 +986,7 @@ export default function AdminCmsPage() {
         description: "The selected product and its linked dimensions/images were removed from Supabase.",
         variant: "default",
       });
+      setIsProductModalOpen(false);
     } catch (deleteError) {
       console.error(deleteError);
       const message = normalizeAdminError(
@@ -882,6 +1004,144 @@ export default function AdminCmsPage() {
       });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleSaveCollection = async () => {
+    if (!supabase) {
+      toast({
+        title: "Supabase is not configured",
+        description: "Add your Supabase URL and anon key before managing categories.",
+      });
+      return;
+    }
+
+    const normalizedTitle = collectionForm.title.trim();
+    const normalizedSlug =
+      collectionForm.slug.trim() || slugifyProductTitle(normalizedTitle);
+
+    if (!normalizedTitle || !normalizedSlug) {
+      toast({
+        title: "Missing category details",
+        description: "Category title and slug are required.",
+      });
+      return;
+    }
+
+    setIsSavingCollection(true);
+    setAdminNotice(null);
+
+    try {
+      const payload = {
+        slug: normalizedSlug,
+        title: normalizedTitle,
+        description: collectionForm.description.trim() || null,
+        sort_order: Number(collectionForm.sortOrder || 0),
+        is_active: collectionForm.isActive,
+      };
+
+      const isEditingExisting = Boolean(selectedCollectionId && !isCreatingCollection);
+
+      if (isEditingExisting) {
+        const { error: updateError } = await supabase
+          .from("collections")
+          .update(payload)
+          .eq("id", selectedCollectionId);
+
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from("collections")
+          .insert(payload);
+
+        if (insertError) throw insertError;
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["admin-collections"] });
+      setIsCollectionModalOpen(false);
+
+      toast({
+        title: isEditingExisting ? "Category updated" : "Category created",
+        description: `${normalizedTitle} is available in admin product forms.`,
+      });
+      setAdminNotice({
+        title: isEditingExisting ? "Category updated" : "Category created",
+        description: `${normalizedTitle} was saved to the Supabase collections table.`,
+        variant: "default",
+      });
+    } catch (collectionError) {
+      console.error(collectionError);
+      const message = normalizeAdminError(
+        collectionError,
+        "Please review your admin role and collection table policies.",
+      );
+      toast({
+        title: "Unable to save category",
+        description: message,
+      });
+      setAdminNotice({
+        title: "Category save failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingCollection(false);
+    }
+  };
+
+  const handleDeleteCollection = async () => {
+    if (!supabase || !selectedCollectionId || !selectedCollection) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${selectedCollection.title}" from Supabase collections? Products using this category keep their existing text value.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingCollection(true);
+    setAdminNotice(null);
+
+    try {
+      const { error: deleteError } = await supabase
+        .from("collections")
+        .delete()
+        .eq("id", selectedCollectionId);
+
+      if (deleteError) throw deleteError;
+
+      await queryClient.invalidateQueries({ queryKey: ["admin-collections"] });
+      setIsCollectionModalOpen(false);
+
+      toast({
+        title: "Category deleted",
+        description: "The category row was removed from Supabase.",
+      });
+      setAdminNotice({
+        title: "Category deleted",
+        description: "The category row was removed from the collections table.",
+        variant: "default",
+      });
+    } catch (collectionError) {
+      console.error(collectionError);
+      const message = normalizeAdminError(
+        collectionError,
+        "Please review your admin role and collection table policies.",
+      );
+      toast({
+        title: "Unable to delete category",
+        description: message,
+      });
+      setAdminNotice({
+        title: "Category delete failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeletingCollection(false);
     }
   };
 
@@ -994,18 +1254,17 @@ export default function AdminCmsPage() {
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => syncSelectedProduct(NEW_PRODUCT_ID)}
+              onClick={openCreateCollectionModal}
               className="px-5 py-3 rounded-xl bg-surface-container-low text-on-surface font-semibold hover:bg-surface-dim transition-colors"
             >
-              New Product
+              Add Category
             </button>
             <button
               type="button"
-              onClick={handleSaveProduct}
-              disabled={isSaving}
+              onClick={openCreateProductModal}
               className="px-5 py-3 rounded-xl bg-cta-gradient text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
             >
-              {isSaving ? "Saving…" : "Save To Supabase"}
+              Add Product
             </button>
           </div>
         </div>
@@ -1047,83 +1306,228 @@ export default function AdminCmsPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-8 items-start">
-          <aside className="rounded-[1.5rem] bg-surface-container-lowest border border-outline-variant/20 p-4 xl:sticky xl:top-28">
-            <div className="flex items-center justify-between px-2 pt-2 pb-4">
+        <div className="space-y-8">
+          <section className="rounded-[1.5rem] bg-surface-container-lowest border border-outline-variant/20 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
               <div>
-                <h2 className="font-headline font-bold text-lg text-on-surface">
+                <h2 className="font-headline font-bold text-2xl text-on-surface">
                   Catalog Entries
                 </h2>
-                <p className="text-xs text-on-surface-variant">
-                  {isLoading ? "Loading…" : `${catalog.length} products`}
+                <p className="text-sm text-on-surface-variant mt-1">
+                  {isLoading ? "Loading products…" : `${catalog.length} products in Supabase`}
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={openCreateProductModal}
+                className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-cta-gradient text-white font-semibold hover:opacity-90 transition-opacity"
+              >
+                <MaterialIcon icon="add" className="text-base" />
+                Add Product
+              </button>
             </div>
 
-            <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-              {catalog.map((entry) => {
-                const isSelected = selectedProductId === entry.product.id;
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left text-sm">
+                <thead>
+                  <tr className="text-xs font-bold uppercase tracking-[0.22em] text-secondary">
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Preview</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Product</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Category</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Price</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Sizes</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Status</th>
+                    <th className="border-b border-outline-variant/20 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {catalog.map((entry) => {
+                    const previewImage = getPreviewImage(entry);
 
-                return (
-                  <button
-                    key={entry.product.id}
-                    type="button"
-                    onClick={() => syncSelectedProduct(entry.product.id)}
-                    className={`w-full text-left rounded-2xl p-4 transition-colors ${
-                      isSelected
-                        ? "bg-inverse-surface text-inverse-on-surface"
-                        : "bg-surface-container-low hover:bg-surface-dim text-on-surface"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="h-16 w-12 overflow-hidden rounded-lg bg-surface-container-low shrink-0">
-                        {entry.images[0]?.image_url ? (
-                          <img
-                            src={entry.images[0].image_url}
-                            alt={entry.images[0].alt_text || entry.product.title}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-outline-variant">
-                            <MaterialIcon icon="image" className="text-xl" />
+                    return (
+                      <tr key={entry.product.id} className="align-middle">
+                        <td className="border-b border-outline-variant/10 py-4 pr-4">
+                          <div className="h-20 w-14 overflow-hidden rounded-xl bg-surface-container-low">
+                            {previewImage?.image_url ? (
+                              <img
+                                src={previewImage.image_url}
+                                alt={previewImage.alt_text || entry.product.title}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-outline-variant">
+                                <MaterialIcon icon="image" className="text-xl" />
+                              </div>
+                            )}
                           </div>
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 pr-4">
+                          <p className="font-semibold text-on-surface">
+                            {entry.product.title}
+                          </p>
+                          <p className="mt-1 text-xs text-on-surface-variant">
+                            /{entry.product.slug}
+                          </p>
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 pr-4 text-on-surface-variant">
+                          {entry.product.collection}
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 pr-4 font-semibold text-on-surface">
+                          {formatMoney(entry.product.base_price, entry.product.currency_code)}
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 pr-4 text-on-surface-variant">
+                          {entry.dimensions.map((dimension) => dimension.label).join(", ") || "No sizes"}
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 pr-4">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest ${
+                              entry.product.is_active
+                                ? "bg-secondary-container/40 text-on-surface"
+                                : "bg-surface-container-high text-on-surface-variant"
+                            }`}
+                          >
+                            {entry.product.is_active ? "Live" : "Draft"}
+                          </span>
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openUpdateProductModal(entry)}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-surface-container-low text-on-surface transition-colors hover:bg-surface-dim"
+                            aria-label={`Edit ${entry.product.title}`}
+                          >
+                            <MaterialIcon icon="edit" className="text-base" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {!isLoading && catalog.length === 0 && (
+              <div className="mt-5 rounded-2xl bg-surface-container-low p-5 text-sm text-on-surface-variant">
+                No products in Supabase yet. Start by creating your first entry.
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-[1.5rem] bg-surface-container-lowest border border-outline-variant/20 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+              <div>
+                <h2 className="font-headline font-bold text-2xl text-on-surface">
+                  Categories
+                </h2>
+                <p className="text-sm text-on-surface-variant mt-1">
+                  Manage the Supabase collections used by product category selectors.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openCreateCollectionModal}
+                className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-surface-container-low text-on-surface font-semibold hover:bg-surface-dim transition-colors"
+              >
+                <MaterialIcon icon="add" className="text-base" />
+                Add Category
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] border-separate border-spacing-0 text-left text-sm">
+                <thead>
+                  <tr className="text-xs font-bold uppercase tracking-[0.22em] text-secondary">
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Title</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Slug</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Sort</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Status</th>
+                    <th className="border-b border-outline-variant/20 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {collections.map((collection) => (
+                    <tr key={collection.id}>
+                      <td className="border-b border-outline-variant/10 py-4 pr-4">
+                        <p className="font-semibold text-on-surface">{collection.title}</p>
+                        {collection.description && (
+                          <p className="mt-1 max-w-xl truncate text-xs text-on-surface-variant">
+                            {collection.description}
+                          </p>
                         )}
-                      </div>
-                      <div>
-                        <p className="font-semibold">{entry.product.title}</p>
-                        <p
-                          className={`text-xs mt-1 ${
-                            isSelected
-                              ? "text-inverse-on-surface/70"
-                              : "text-on-surface-variant"
+                      </td>
+                      <td className="border-b border-outline-variant/10 py-4 pr-4 text-on-surface-variant">
+                        /{collection.slug}
+                      </td>
+                      <td className="border-b border-outline-variant/10 py-4 pr-4 text-on-surface-variant">
+                        {collection.sort_order}
+                      </td>
+                      <td className="border-b border-outline-variant/10 py-4 pr-4">
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest ${
+                            collection.is_active
+                              ? "bg-secondary-container/40 text-on-surface"
+                              : "bg-surface-container-high text-on-surface-variant"
                           }`}
                         >
-                          /{entry.product.slug}
-                        </p>
-                      </div>
-                      <span className="text-xs font-bold uppercase tracking-widest">
-                        {entry.product.is_active ? "Live" : "Draft"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between mt-4 text-xs">
-                      <span>{entry.product.collection}</span>
-                      <span>
-                        {formatMoney(entry.product.base_price, entry.product.currency_code)}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-
-              {!isLoading && catalog.length === 0 && (
-                <div className="rounded-2xl bg-surface-container-low p-4 text-sm text-on-surface-variant">
-                  No products in Supabase yet. Start by creating your first entry.
-                </div>
-              )}
+                          {collection.is_active ? "Active" : "Hidden"}
+                        </span>
+                      </td>
+                      <td className="border-b border-outline-variant/10 py-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => openUpdateCollectionModal(collection)}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-surface-container-low text-on-surface transition-colors hover:bg-surface-dim"
+                          aria-label={`Edit ${collection.title}`}
+                        >
+                          <MaterialIcon icon="edit" className="text-base" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </aside>
 
-          <section className="space-y-6">
+            {!isCollectionsLoading && collections.length === 0 && (
+              <div className="mt-5 rounded-2xl bg-surface-container-low p-5 text-sm text-on-surface-variant">
+                No categories found. Add one here or seed initial collections in Supabase.
+              </div>
+            )}
+          </section>
+        </div>
+
+        {isProductModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-8">
+            <section className="w-full max-w-6xl space-y-6 rounded-[1.5rem] bg-surface-container-low p-4 shadow-2xl md:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4 rounded-[1.25rem] bg-surface-container-lowest border border-outline-variant/20 p-5">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.28em] text-secondary">
+                    Product Editor
+                  </p>
+                  <h2 className="mt-2 text-3xl font-headline font-extrabold tracking-tight text-on-surface">
+                    {isCreatingNew ? "Add product" : "Update product"}
+                  </h2>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsProductModalOpen(false)}
+                    className="inline-flex items-center gap-2 rounded-xl bg-surface-container-high px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-dim"
+                  >
+                    <MaterialIcon icon="close" className="text-base" />
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveProduct}
+                    disabled={isSaving}
+                    className="inline-flex items-center gap-2 rounded-xl bg-cta-gradient px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  >
+                    <MaterialIcon icon="save" className="text-base" />
+                    {isSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
             <div className="rounded-[1.5rem] bg-surface-container-lowest border border-outline-variant/20 p-6">
               <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
                 <div>
@@ -1701,8 +2105,127 @@ export default function AdminCmsPage() {
                 ))}
               </div>
             </div>
-          </section>
-        </div>
+            </section>
+          </div>
+        )}
+
+        {isCollectionModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-8">
+            <section className="w-full max-w-3xl rounded-[1.5rem] bg-surface-container-lowest p-6 shadow-2xl">
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-outline-variant/20 pb-5">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.28em] text-secondary">
+                    Category Editor
+                  </p>
+                  <h2 className="mt-2 text-3xl font-headline font-extrabold tracking-tight text-on-surface">
+                    {isCreatingCollection ? "Add category" : "Update category"}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCollectionModalOpen(false)}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-surface-container-high text-on-surface transition-colors hover:bg-surface-dim"
+                  aria-label="Close category editor"
+                >
+                  <MaterialIcon icon="close" className="text-base" />
+                </button>
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
+                <label className="space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-widest text-secondary">
+                    Title
+                  </span>
+                  <input
+                    value={collectionForm.title}
+                    onChange={(event) => handleCollectionTitleChange(event.target.value)}
+                    className="w-full bg-surface-container-highest rounded-xl px-4 py-3 text-sm"
+                    placeholder="Editorial Prints"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-widest text-secondary">
+                    Slug
+                  </span>
+                  <input
+                    value={collectionForm.slug}
+                    onChange={(event) => handleCollectionSlugChange(event.target.value)}
+                    className="w-full bg-surface-container-highest rounded-xl px-4 py-3 text-sm"
+                    placeholder="editorial-prints"
+                  />
+                </label>
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-xs font-bold uppercase tracking-widest text-secondary">
+                    Description
+                  </span>
+                  <textarea
+                    value={collectionForm.description}
+                    onChange={(event) =>
+                      updateCollectionForm("description", event.target.value)
+                    }
+                    className="w-full min-h-28 bg-surface-container-highest rounded-xl px-4 py-3 text-sm"
+                    placeholder="Optional category description for admin context."
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-widest text-secondary">
+                    Sort Order
+                  </span>
+                  <input
+                    value={collectionForm.sortOrder}
+                    onChange={(event) =>
+                      updateCollectionForm("sortOrder", event.target.value)
+                    }
+                    className="w-full bg-surface-container-highest rounded-xl px-4 py-3 text-sm"
+                    type="number"
+                  />
+                </label>
+                <label className="flex items-center gap-3 pt-8 text-sm font-medium text-on-surface">
+                  <input
+                    type="checkbox"
+                    checked={collectionForm.isActive}
+                    onChange={(event) =>
+                      updateCollectionForm("isActive", event.target.checked)
+                    }
+                  />
+                  Active in product category list
+                </label>
+              </div>
+
+              <div className="mt-7 flex flex-wrap justify-between gap-3 border-t border-outline-variant/20 pt-5">
+                {!isCreatingCollection && selectedCollection && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteCollection}
+                    disabled={isDeletingCollection}
+                    className="inline-flex items-center gap-2 rounded-xl bg-destructive px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  >
+                    <MaterialIcon icon="delete" className="text-base" />
+                    {isDeletingCollection ? "Deleting…" : "Delete"}
+                  </button>
+                )}
+                <div className="ml-auto flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsCollectionModalOpen(false)}
+                    className="rounded-xl bg-surface-container-high px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-dim"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveCollection}
+                    disabled={isSavingCollection}
+                    className="inline-flex items-center gap-2 rounded-xl bg-cta-gradient px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  >
+                    <MaterialIcon icon="save" className="text-base" />
+                    {isSavingCollection ? "Saving…" : "Save Category"}
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
       </main>
       <Footer />
     </div>

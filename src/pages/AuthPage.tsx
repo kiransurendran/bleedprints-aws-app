@@ -10,14 +10,50 @@ import { publicEnv } from "@/lib/env";
 import { usePageMetadata } from "@/lib/seo";
 import { supabase } from "@/lib/supabase/client";
 
-type AuthView = "signin" | "signup" | "phone";
+type AuthView = "signin" | "signup" | "phone" | "forgot" | "reset";
+
+const countryCodeOptions = [
+  { label: "India", value: "+91" },
+  { label: "US / Canada", value: "+1" },
+  { label: "UK", value: "+44" },
+  { label: "Australia", value: "+61" },
+  { label: "Singapore", value: "+65" },
+  { label: "UAE", value: "+971" },
+];
+
+function normalizePhoneForOtp(countryCode: string, phone: string) {
+  const trimmedPhone = phone.trim();
+  const phoneDigits = trimmedPhone.replace(/[^\d]/g, "");
+
+  if (!phoneDigits) {
+    return "";
+  }
+
+  if (trimmedPhone.startsWith("+")) {
+    return `+${phoneDigits}`;
+  }
+
+  const dialingCode = countryCode.replace(/[^\d]/g, "");
+
+  return dialingCode ? `+${dialingCode}${phoneDigits}` : "";
+}
+
+function buildAuthRedirectUrl(path = "/") {
+  const origin =
+    typeof window === "undefined" ? publicEnv.siteUrl : window.location.origin;
+  const relativePath =
+    path.startsWith("/") && !path.startsWith("//") ? path : "/";
+
+  return new URL(relativePath, `${origin}/`).toString();
+}
 
 export default function AuthPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { isConfigured, isLoading, profile, saveProfile, signOut, user } = useAuth();
   const redirectTarget = searchParams.get("redirect") || "/";
-  const [view, setView] = useState<AuthView>("signin");
+  const initialMode = searchParams.get("mode") === "reset-password" ? "reset" : "signin";
+  const [view, setView] = useState<AuthView>(initialMode);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [phoneStep, setPhoneStep] = useState<"request" | "verify">("request");
   const [emailForm, setEmailForm] = useState({
@@ -28,8 +64,15 @@ export default function AuthPage() {
   });
   const [phoneForm, setPhoneForm] = useState({
     fullName: "",
+    countryCode: "+91",
     phone: "",
     token: "",
+  });
+  const [pendingOtpPhone, setPendingOtpPhone] = useState("");
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [resetForm, setResetForm] = useState({
+    password: "",
+    confirmPassword: "",
   });
 
   usePageMetadata({
@@ -41,10 +84,28 @@ export default function AuthPage() {
   });
 
   useEffect(() => {
-    if (!isLoading && user) {
+    if (!isLoading && user && view !== "reset") {
       navigate(redirectTarget, { replace: true });
     }
-  }, [isLoading, navigate, redirectTarget, user]);
+  }, [isLoading, navigate, redirectTarget, user, view]);
+
+  useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setView("reset");
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const authHeadline = useMemo(
     () =>
@@ -52,6 +113,10 @@ export default function AuthPage() {
         ? "Create your BleedPrints account"
         : view === "phone"
           ? "Continue with your phone"
+          : view === "forgot"
+            ? "Reset your password"
+            : view === "reset"
+              ? "Create a new password"
           : "Sign in to your account",
     [view],
   );
@@ -93,7 +158,7 @@ export default function AuthPage() {
           email: emailForm.email.trim(),
           password: emailForm.password,
           options: {
-            emailRedirectTo: `${publicEnv.siteUrl}${redirectTarget}`,
+            emailRedirectTo: buildAuthRedirectUrl(redirectTarget),
             data: {
               full_name: emailForm.fullName.trim(),
               phone: emailForm.phone.trim() || null,
@@ -154,7 +219,12 @@ export default function AuthPage() {
       return;
     }
 
-    if (!phoneForm.phone.trim()) {
+    const normalizedPhone = normalizePhoneForOtp(
+      phoneForm.countryCode,
+      phoneForm.phone,
+    );
+
+    if (!normalizedPhone) {
       toast({
         title: "Phone number required",
         description: "Enter your phone number to receive a login code.",
@@ -167,7 +237,7 @@ export default function AuthPage() {
     try {
       if (phoneStep === "request") {
         const { error } = await supabase.auth.signInWithOtp({
-          phone: phoneForm.phone.trim(),
+          phone: normalizedPhone,
           options: {
             shouldCreateUser: true,
             data: {
@@ -180,14 +250,17 @@ export default function AuthPage() {
           throw error;
         }
 
+        setPendingOtpPhone(normalizedPhone);
         setPhoneStep("verify");
         toast({
           title: "Verification code sent",
           description: "Enter the SMS code to finish signing in.",
         });
       } else {
+        const verificationPhone = pendingOtpPhone || normalizedPhone;
+
         const { error } = await supabase.auth.verifyOtp({
-          phone: phoneForm.phone.trim(),
+          phone: verificationPhone,
           token: phoneForm.token.trim(),
           type: "sms",
         });
@@ -198,7 +271,7 @@ export default function AuthPage() {
 
         if (phoneForm.fullName.trim()) {
           await saveProfile({
-            phone: phoneForm.phone.trim(),
+            phone: verificationPhone,
             fullName: phoneForm.fullName.trim(),
           });
         }
@@ -222,6 +295,102 @@ export default function AuthPage() {
     }
   };
 
+  const handleSendPasswordReset = async () => {
+    if (!supabase) {
+      return;
+    }
+
+    const email = recoveryEmail.trim() || emailForm.email.trim();
+
+    if (!email) {
+      toast({
+        title: "Email required",
+        description: "Enter the email address connected to your account.",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: buildAuthRedirectUrl("/auth?mode=reset-password"),
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setRecoveryEmail(email);
+      toast({
+        title: "Password reset email sent",
+        description: "Open the secure link in your email to choose a new password.",
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Unable to send reset email",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Please check the email address and try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!supabase) {
+      return;
+    }
+
+    if (!resetForm.password || resetForm.password.length < 6) {
+      toast({
+        title: "Password is too short",
+        description: "Use at least 6 characters for your new password.",
+      });
+      return;
+    }
+
+    if (resetForm.password !== resetForm.confirmPassword) {
+      toast({
+        title: "Passwords do not match",
+        description: "Confirm the same password before updating your account.",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: resetForm.password,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      toast({
+        title: "Password updated",
+        description: "Your new password is active. You can continue to your account.",
+      });
+      navigate(redirectTarget, { replace: true });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Unable to update password",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Open the latest reset link and try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleOAuth = async (provider: "google" | "apple") => {
     if (!supabase) {
       return;
@@ -233,7 +402,7 @@ export default function AuthPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${publicEnv.siteUrl}${redirectTarget}`,
+          redirectTo: buildAuthRedirectUrl(redirectTarget),
         },
       });
 
@@ -335,7 +504,7 @@ export default function AuthPage() {
               <div className="rounded-2xl bg-destructive/10 p-6 text-sm leading-7 text-on-surface">
                 Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` to enable customer auth.
               </div>
-            ) : user && profile ? (
+            ) : user && profile && view !== "reset" ? (
               <div className="space-y-6">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.28em] text-secondary">
@@ -401,11 +570,92 @@ export default function AuthPage() {
                       ? "Create an account with email and password, then we will prepare your profile and order history."
                       : view === "phone"
                         ? "Use a one-time SMS code to sign in or create your account."
+                        : view === "forgot"
+                          ? "Enter your account email and we will send a secure password reset link."
+                          : view === "reset"
+                            ? "Choose a new password after opening the reset link from your email."
                         : "Use your email and password, or continue with your preferred sign-in provider."}
                   </p>
                 </div>
 
-                {view !== "phone" ? (
+                {view === "forgot" ? (
+                  <div className="mt-8 grid gap-4">
+                    <label className="space-y-2">
+                      <span className="text-xs font-bold uppercase tracking-[0.24em] text-secondary">
+                        Account Email
+                      </span>
+                      <input
+                        value={recoveryEmail}
+                        onChange={(event) => setRecoveryEmail(event.target.value)}
+                        className="w-full rounded-xl bg-surface-container-highest px-4 py-3 text-sm"
+                        placeholder="you@example.com"
+                        type="email"
+                      />
+                    </label>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={handleSendPasswordReset}
+                        disabled={isSubmitting}
+                        className="rounded-xl bg-cta-gradient px-5 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                      >
+                        {isSubmitting ? "Sending…" : "Send reset link"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setView("signin")}
+                        className="rounded-xl bg-surface-container-high px-5 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-dim"
+                      >
+                        Back to sign in
+                      </button>
+                    </div>
+                  </div>
+                ) : view === "reset" ? (
+                  <div className="mt-8 grid gap-4">
+                    <label className="space-y-2">
+                      <span className="text-xs font-bold uppercase tracking-[0.24em] text-secondary">
+                        New Password
+                      </span>
+                      <input
+                        value={resetForm.password}
+                        onChange={(event) =>
+                          setResetForm((current) => ({
+                            ...current,
+                            password: event.target.value,
+                          }))
+                        }
+                        className="w-full rounded-xl bg-surface-container-highest px-4 py-3 text-sm"
+                        placeholder="Minimum 6 characters"
+                        type="password"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-xs font-bold uppercase tracking-[0.24em] text-secondary">
+                        Confirm Password
+                      </span>
+                      <input
+                        value={resetForm.confirmPassword}
+                        onChange={(event) =>
+                          setResetForm((current) => ({
+                            ...current,
+                            confirmPassword: event.target.value,
+                          }))
+                        }
+                        className="w-full rounded-xl bg-surface-container-highest px-4 py-3 text-sm"
+                        placeholder="Repeat your new password"
+                        type="password"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleUpdatePassword}
+                      disabled={isSubmitting}
+                      className="rounded-xl bg-cta-gradient px-5 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                    >
+                      {isSubmitting ? "Updating…" : "Update password"}
+                    </button>
+                  </div>
+                ) : view !== "phone" ? (
                   <div className="mt-8 grid gap-4">
                     {view === "signup" && (
                       <>
@@ -465,6 +715,18 @@ export default function AuthPage() {
                         type="password"
                       />
                     </label>
+                    {view === "signin" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRecoveryEmail(emailForm.email.trim());
+                          setView("forgot");
+                        }}
+                        className="w-fit text-sm font-semibold text-primary hover:underline"
+                      >
+                        Forgot password?
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -500,14 +762,36 @@ export default function AuthPage() {
                       <span className="text-xs font-bold uppercase tracking-[0.24em] text-secondary">
                         Phone Number
                       </span>
-                      <input
-                        value={phoneForm.phone}
-                        onChange={(event) =>
-                          updatePhoneForm("phone", event.target.value)
-                        }
-                        className="w-full rounded-xl bg-surface-container-highest px-4 py-3 text-sm"
-                        placeholder="+91 98765 43210"
-                      />
+                      <div className="grid grid-cols-[minmax(8rem,10rem)_1fr] gap-3">
+                        <select
+                          value={phoneForm.countryCode}
+                          onChange={(event) =>
+                            updatePhoneForm("countryCode", event.target.value)
+                          }
+                          disabled={phoneStep === "verify"}
+                          className="w-full rounded-xl bg-surface-container-highest px-4 py-3 text-sm disabled:opacity-70"
+                        >
+                          {countryCodeOptions.map((option) => (
+                            <option
+                              key={`${option.label}-${option.value}`}
+                              value={option.value}
+                            >
+                              {option.value} {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          value={phoneForm.phone}
+                          onChange={(event) =>
+                            updatePhoneForm("phone", event.target.value)
+                          }
+                          disabled={phoneStep === "verify"}
+                          className="w-full rounded-xl bg-surface-container-highest px-4 py-3 text-sm disabled:opacity-70"
+                          inputMode="tel"
+                          placeholder="98765 43210"
+                          type="tel"
+                        />
+                      </div>
                     </label>
                     {phoneStep === "verify" && (
                       <label className="space-y-2">
@@ -542,6 +826,7 @@ export default function AuthPage() {
                           type="button"
                           onClick={() => {
                             setPhoneStep("request");
+                            setPendingOtpPhone("");
                             updatePhoneForm("token", "");
                           }}
                           className="rounded-xl bg-surface-container-high px-5 py-3 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-dim"
@@ -553,6 +838,7 @@ export default function AuthPage() {
                   </div>
                 )}
 
+                {view !== "forgot" && view !== "reset" && (
                 <div className="mt-8">
                   <div className="flex items-center gap-3">
                     <div className="h-px flex-1 bg-outline-variant/40" />
@@ -580,6 +866,7 @@ export default function AuthPage() {
                     </button>
                   </div>
                 </div>
+                )}
               </div>
             )}
           </section>

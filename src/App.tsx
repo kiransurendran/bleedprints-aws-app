@@ -51,6 +51,7 @@ const App = () => (
           <BrowserRouter>
             <Suspense fallback={<RouteLoadingState />}>
               <Routes>
+                <Route path="/collections" element={<HomePage />} />
                 <Route path="/" element={<HomePage />} />
                 <Route path="/shop" element={<HomePage />} />
                 <Route path="/series/summer-solstice" element={<FeaturedSeriesPage />} />
