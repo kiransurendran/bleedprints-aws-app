@@ -215,7 +215,7 @@ Deno.serve(async (req) => {
     const subtotalAmount = Number(
       lineItems.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2),
     );
-    const shippingAmount = body.deliveryMethod === "express" ? 240 : 0;
+    const shippingAmount = body.deliveryMethod === "express" ? 240 : 70;
     const taxAmount = 0;
     const totalAmount = Number(
       (subtotalAmount + shippingAmount + taxAmount).toFixed(2),

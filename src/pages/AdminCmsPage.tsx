@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import Footer from "@/components/Footer";
 import MaterialIcon from "@/components/MaterialIcon";
 import Navbar from "@/components/Navbar";
 import { toast } from "@/components/ui/use-toast";
-import {
-  listAdminOrders,
-  updateAdminOrderStatus,
-  type AdminOrder,
-} from "@/lib/admin/orders";
+
 import {
   buildCanonicalPath,
   buildDefaultBadge,
@@ -25,6 +22,7 @@ import { formatMoney } from "@/lib/money";
 import { queryCacheConfig } from "@/lib/query-client";
 import { usePageMetadata } from "@/lib/seo";
 import { supabase } from "@/lib/supabase/client";
+import { publicEnv } from "@/lib/env";
 import type { StorefrontOrderStatus } from "@/types/orders";
 
 type AdminProductRow = {
@@ -141,6 +139,7 @@ type ProductFormState = {
   seoCanonicalPath: string;
   sortOrder: string;
   isActive: boolean;
+  orientation: "portrait" | "landscape";
   dimensions: ProductFormDimension[];
   images: ProductFormImage[];
 };
@@ -162,31 +161,13 @@ const availabilityOptions: Array<ProductFormState["availabilityStatus"]> = [
 
 const currencyOptions: Array<ProductFormState["currencyCode"]> = ["INR", "USD"];
 
-const orderStatusOptions: StorefrontOrderStatus[] = [
-  "created",
-  "payment_pending",
-  "payment_authorized",
-  "paid",
-  "failed",
-  "cancelled",
-  "fulfilled",
-];
 
-const orderStatusLabels: Record<StorefrontOrderStatus, string> = {
-  created: "Created",
-  payment_pending: "Payment pending",
-  payment_authorized: "Payment authorized",
-  paid: "Paid",
-  failed: "Failed",
-  cancelled: "Cancelled",
-  fulfilled: "Fulfilled",
-};
 
 const requiredDimensionPresets = [
-  { code: "a2", label: "A2", widthCm: "42", heightCm: "59.4" },
-  { code: "a3", label: "A3", widthCm: "29.7", heightCm: "42" },
-  { code: "a4", label: "A4", widthCm: "21", heightCm: "29.7" },
-  { code: "a5", label: "A5", widthCm: "14.8", heightCm: "21" },
+  { code: "a3", label: "A3", widthCm: "29.7", heightCm: "42", defaultAmount: "120", defaultCompareAtAmount: "149" },
+  { code: "a4", label: "A4", widthCm: "21", heightCm: "29.7", defaultAmount: "60", defaultCompareAtAmount: "79" },
+  { code: "a5", label: "A5", widthCm: "14.8", heightCm: "21", defaultAmount: "40", defaultCompareAtAmount: "49" },
+  { code: "a6", label: "A6", widthCm: "10.5", heightCm: "14.8", defaultAmount: "30", defaultCompareAtAmount: "39" },
 ];
 
 const createDimensionDraft = (
@@ -233,11 +214,15 @@ const createEmptyProductForm = (defaultCollection = ""): ProductFormState => ({
   seoCanonicalPath: "",
   sortOrder: "0",
   isActive: true,
+  orientation: "portrait",
   dimensions: requiredDimensionPresets.map((dimension, index) =>
     createDimensionDraft({
-      ...dimension,
-      amount: defaultCmsBasePrice,
-      compareAtAmount: defaultCmsCompareAtPrice,
+      code: dimension.code,
+      label: dimension.label,
+      widthCm: dimension.widthCm,
+      heightCm: dimension.heightCm,
+      amount: dimension.defaultAmount,
+      compareAtAmount: dimension.defaultCompareAtAmount,
       sortOrder: index.toString(),
     }),
   ),
@@ -313,11 +298,10 @@ function productToForm(entry: AdminCatalogEntry): ProductFormState {
       label: dimension?.label ?? preset.label,
       widthCm: dimension?.width_cm.toString() ?? preset.widthCm,
       heightCm: dimension?.height_cm.toString() ?? preset.heightCm,
-      amount: dimension?.amount.toString() ?? entry.product.base_price.toString(),
+      amount: dimension?.amount.toString() ?? preset.defaultAmount,
       compareAtAmount:
         dimension?.compare_at_amount?.toString() ??
-        entry.product.compare_at_price?.toString() ??
-        "",
+        preset.defaultCompareAtAmount,
       sortOrder: dimension?.sort_order.toString() ?? index.toString(),
     });
   });
@@ -341,6 +325,10 @@ function productToForm(entry: AdminCatalogEntry): ProductFormState {
       }),
     );
 
+  const firstDim = entry.dimensions[0];
+  const detectedOrientation =
+    firstDim && firstDim.width_cm > firstDim.height_cm ? "landscape" : "portrait";
+
   return {
     slug: entry.product.slug,
     title: entry.product.title,
@@ -362,6 +350,7 @@ function productToForm(entry: AdminCatalogEntry): ProductFormState {
     seoCanonicalPath: entry.product.seo_canonical_path ?? "",
     sortOrder: entry.product.sort_order.toString(),
     isActive: entry.product.is_active,
+    orientation: detectedOrientation,
     dimensions: [...requiredDimensions, ...customDimensions],
     images: entry.images.length
       ? entry.images.map((image) =>
@@ -406,18 +395,7 @@ function formatAdminDate(value: string) {
   }).format(date);
 }
 
-function getShippingAddressSummary(address: AdminOrder["shippingAddress"]) {
-  return [
-    address.line1,
-    address.line2,
-    address.city,
-    address.state,
-    address.postalCode,
-    address.country,
-  ]
-    .filter(Boolean)
-    .join(", ");
-}
+
 
 async function fetchAdminCatalog(): Promise<AdminCatalogEntry[]> {
   if (!supabase) {
@@ -496,7 +474,7 @@ export default function AdminCmsPage() {
   const [isSavingCollection, setIsSavingCollection] = useState(false);
   const [isDeletingCollection, setIsDeletingCollection] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+
   const [adminNotice, setAdminNotice] = useState<AdminNotice | null>(null);
 
   const {
@@ -525,20 +503,7 @@ export default function AdminCmsPage() {
     gcTime: queryCacheConfig.cacheRetentionTime,
   });
 
-  const {
-    data: adminOrders = [],
-    isLoading: isOrdersLoading,
-    isFetching: isOrdersFetching,
-    error: ordersError,
-    refetch: refetchOrders,
-  } = useQuery({
-    queryKey: ["admin-orders"],
-    queryFn: listAdminOrders,
-    enabled: Boolean(supabase),
-    retry: false,
-    staleTime: queryCacheConfig.adminDataStaleTime,
-    gcTime: queryCacheConfig.cacheRetentionTime,
-  });
+
 
   const defaultCollectionTitle = collections[0]?.title ?? "";
   const selectedEntry = useMemo(
@@ -817,6 +782,39 @@ export default function AdminCmsPage() {
             ? { ...dimension, compareAtAmount: value }
             : dimension,
         ),
+      };
+    });
+  };
+
+  const handleOrientationChange = (orientation: "portrait" | "landscape") => {
+    setForm((current) => {
+      const updatedDimensions = current.dimensions.map((dim) => {
+        const w = parseFloat(dim.widthCm);
+        const h = parseFloat(dim.heightCm);
+        if (isNaN(w) || isNaN(h)) return dim;
+
+        let newWidth = dim.widthCm;
+        let newHeight = dim.heightCm;
+
+        if (orientation === "landscape" && w < h) {
+          newWidth = dim.heightCm;
+          newHeight = dim.widthCm;
+        } else if (orientation === "portrait" && w > h) {
+          newWidth = dim.heightCm;
+          newHeight = dim.widthCm;
+        }
+
+        return {
+          ...dim,
+          widthCm: newWidth,
+          heightCm: newHeight,
+        };
+      });
+
+      return {
+        ...current,
+        orientation,
+        dimensions: updatedDimensions,
       };
     });
   };
@@ -1304,59 +1302,7 @@ export default function AdminCmsPage() {
     }
   };
 
-  const handleUpdateOrderStatus = async (
-    order: AdminOrder,
-    status: StorefrontOrderStatus,
-  ) => {
-    if (order.status === status) {
-      return;
-    }
 
-    setUpdatingOrderId(order.id);
-    setAdminNotice(null);
-
-    try {
-      await updateAdminOrderStatus(order.id, status);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["admin-orders"] }),
-        queryClient.invalidateQueries({ queryKey: ["orders"] }),
-      ]);
-
-      toast({
-        title: "Order updated",
-        description: `${order.orderNumber} is now ${orderStatusLabels[status].toLowerCase()}.`,
-      });
-      setAdminNotice({
-        title: "Order status updated",
-        description: `${order.orderNumber} was moved from ${orderStatusLabels[order.status].toLowerCase()} to ${orderStatusLabels[status].toLowerCase()}.`,
-        variant: "default",
-      });
-    } catch (orderError) {
-      console.error(orderError);
-      const message = normalizeAdminError(
-        orderError,
-        "Order status could not be updated. Make sure the admin order update policy has been applied in Supabase.",
-      );
-      toast({
-        title: "Unable to update order",
-        description: message,
-      });
-      setAdminNotice({
-        title: "Order update failed",
-        description: message,
-        variant: "destructive",
-      });
-    } finally {
-      setUpdatingOrderId(null);
-    }
-  };
-
-  const ordersErrorMessage = ordersError
-    ? normalizeAdminError(
-        ordersError,
-        "Orders could not be loaded. Apply the latest order RLS policy, confirm your account is admin, then refresh the admin studio.",
-      )
-    : null;
 
   const collectionErrorMessage = collectionsError
     ? normalizeAdminError(
@@ -1400,6 +1346,22 @@ export default function AdminCmsPage() {
           </div>
         </div>
 
+        {/* Tab Bar Navigation */}
+        <div className="flex border-b border-outline-variant/20 mb-8 gap-6 text-sm">
+          <Link
+            to={publicEnv.adminDashboardPath}
+            className="pb-4 font-semibold text-primary border-b-2 border-primary relative"
+          >
+            Products & Categories
+          </Link>
+          <Link
+            to={`${publicEnv.adminDashboardPath}/orders`}
+            className="pb-4 font-semibold text-on-surface-variant hover:text-on-surface transition-colors"
+          >
+            Orders
+          </Link>
+        </div>
+
         {!supabase && (
           <div className="mb-8 rounded-2xl bg-destructive/10 border border-destructive/20 p-5 text-sm text-on-surface">
             Supabase is not configured in the frontend. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` to use the admin studio.
@@ -1418,11 +1380,7 @@ export default function AdminCmsPage() {
           </div>
         )}
 
-        {ordersErrorMessage && (
-          <div className="mb-8 rounded-2xl bg-destructive/10 border border-destructive/20 p-5 text-sm text-on-surface">
-            {ordersErrorMessage}
-          </div>
-        )}
+
 
         {!collectionErrorMessage && supabase && !isCollectionsLoading && collections.length === 0 && (
           <div className="mb-8 rounded-2xl bg-secondary-container/20 border border-outline-variant/20 p-5 text-sm text-on-surface">
@@ -1444,183 +1402,7 @@ export default function AdminCmsPage() {
         )}
 
         <div className="space-y-8">
-          <section className="rounded-[1.5rem] bg-surface-container-lowest border border-outline-variant/20 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
-              <div>
-                <h2 className="font-headline font-bold text-2xl text-on-surface">
-                  Incoming Orders
-                </h2>
-                <p className="text-sm text-on-surface-variant mt-1">
-                  {isOrdersLoading
-                    ? "Loading recent orders..."
-                    : `${adminOrders.length} recent orders from Supabase`}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void refetchOrders()}
-                disabled={isOrdersFetching}
-                className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-surface-container-low text-on-surface font-semibold hover:bg-surface-dim transition-colors disabled:opacity-60"
-              >
-                <MaterialIcon icon="refresh" className="text-base" />
-                {isOrdersFetching ? "Refreshing..." : "Refresh"}
-              </button>
-            </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1120px] border-separate border-spacing-0 text-left text-sm">
-                <thead>
-                  <tr className="text-xs font-bold uppercase tracking-[0.22em] text-secondary">
-                    <th className="border-b border-outline-variant/20 py-3 pr-4">Order</th>
-                    <th className="border-b border-outline-variant/20 py-3 pr-4">Customer</th>
-                    <th className="border-b border-outline-variant/20 py-3 pr-4">Items</th>
-                    <th className="border-b border-outline-variant/20 py-3 pr-4">Total</th>
-                    <th className="border-b border-outline-variant/20 py-3 pr-4">Payment</th>
-                    <th className="border-b border-outline-variant/20 py-3 pr-4">Status</th>
-                    <th className="border-b border-outline-variant/20 py-3">Updated</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {adminOrders.map((order) => {
-                    const addressSummary = getShippingAddressSummary(
-                      order.shippingAddress,
-                    );
-                    const visibleItems = order.items.slice(0, 3);
-                    const hiddenItemCount = order.items.length - visibleItems.length;
-
-                    return (
-                      <tr key={order.id} className="align-top">
-                        <td className="border-b border-outline-variant/10 py-4 pr-4">
-                          <p className="font-semibold text-on-surface">
-                            {order.orderNumber}
-                          </p>
-                          <p className="mt-1 text-xs text-on-surface-variant">
-                            {formatAdminDate(order.createdAt)}
-                          </p>
-                          {order.razorpayOrderId && (
-                            <p className="mt-2 max-w-[180px] truncate text-[11px] text-on-surface-variant">
-                              {order.razorpayOrderId}
-                            </p>
-                          )}
-                        </td>
-                        <td className="border-b border-outline-variant/10 py-4 pr-4">
-                          <p className="font-semibold text-on-surface">
-                            {order.customerName || "Customer"}
-                          </p>
-                          <p className="mt-1 text-xs text-on-surface-variant">
-                            {order.customerEmail || "No email"}
-                          </p>
-                          {order.customerPhone && (
-                            <p className="mt-1 text-xs text-on-surface-variant">
-                              {order.customerPhone}
-                            </p>
-                          )}
-                          <p className="mt-2 max-w-[260px] text-xs leading-5 text-on-surface-variant">
-                            {addressSummary || "No shipping address yet"}
-                          </p>
-                        </td>
-                        <td className="border-b border-outline-variant/10 py-4 pr-4">
-                          {visibleItems.length ? (
-                            <div className="space-y-3">
-                              {visibleItems.map((item) => (
-                                <div key={item.id} className="flex gap-3">
-                                  <div className="h-12 w-9 flex-shrink-0 overflow-hidden rounded-lg bg-surface-container-low">
-                                    {item.imageUrl ? (
-                                      <img
-                                        src={item.imageUrl}
-                                        alt={item.title}
-                                        className="h-full w-full object-cover"
-                                      />
-                                    ) : (
-                                      <div className="flex h-full w-full items-center justify-center text-outline-variant">
-                                        <MaterialIcon icon="image" className="text-base" />
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div>
-                                    <p className="font-semibold text-on-surface">
-                                      {item.title}
-                                    </p>
-                                    <p className="mt-1 text-xs text-on-surface-variant">
-                                      {item.dimensionLabel} / {item.frame} / Qty {item.quantity}
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                              {hiddenItemCount > 0 && (
-                                <p className="text-xs font-semibold text-secondary">
-                                  +{hiddenItemCount} more item{hiddenItemCount === 1 ? "" : "s"}
-                                </p>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-on-surface-variant">No line items</span>
-                          )}
-                        </td>
-                        <td className="border-b border-outline-variant/10 py-4 pr-4">
-                          <p className="font-semibold text-on-surface">
-                            {formatMoney(order.totalAmount, order.currencyCode)}
-                          </p>
-                          <p className="mt-1 text-xs text-on-surface-variant">
-                            Subtotal {formatMoney(order.subtotalAmount, order.currencyCode)}
-                          </p>
-                          <p className="mt-1 text-xs text-on-surface-variant">
-                            Shipping {formatMoney(order.shippingAmount, order.currencyCode)}
-                          </p>
-                        </td>
-                        <td className="border-b border-outline-variant/10 py-4 pr-4">
-                          <span
-                            className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest ${
-                              order.paymentStatus === "verified"
-                                ? "bg-secondary-container/40 text-on-surface"
-                                : order.paymentStatus === "failed"
-                                  ? "bg-destructive/10 text-destructive"
-                                  : "bg-surface-container-high text-on-surface-variant"
-                            }`}
-                          >
-                            {order.paymentStatus}
-                          </span>
-                          {order.razorpayPaymentId && (
-                            <p className="mt-2 max-w-[180px] truncate text-[11px] text-on-surface-variant">
-                              {order.razorpayPaymentId}
-                            </p>
-                          )}
-                        </td>
-                        <td className="border-b border-outline-variant/10 py-4 pr-4">
-                          <select
-                            value={order.status}
-                            disabled={updatingOrderId === order.id}
-                            onChange={(event) =>
-                              void handleUpdateOrderStatus(
-                                order,
-                                event.target.value as StorefrontOrderStatus,
-                              )
-                            }
-                            className="w-full min-w-44 rounded-xl bg-surface-container-highest px-4 py-3 text-sm font-semibold text-on-surface disabled:opacity-60"
-                          >
-                            {orderStatusOptions.map((status) => (
-                              <option key={status} value={status}>
-                                {orderStatusLabels[status]}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="border-b border-outline-variant/10 py-4 text-on-surface-variant">
-                          {formatAdminDate(order.updatedAt)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {!isOrdersLoading && adminOrders.length === 0 && (
-              <div className="mt-5 rounded-2xl bg-surface-container-low p-5 text-sm text-on-surface-variant">
-                No orders yet. New paid or attempted checkouts will appear here once Supabase receives them.
-              </div>
-            )}
-          </section>
 
           <section className="rounded-[1.5rem] bg-surface-container-lowest border border-outline-variant/20 p-5">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
@@ -1659,10 +1441,15 @@ export default function AdminCmsPage() {
                   {catalog.map((entry) => {
                     const previewImage = getPreviewImage(entry);
 
+                    const firstDim = entry.dimensions[0];
+                    const isLandscape = firstDim && firstDim.width_cm > firstDim.height_cm;
+
                     return (
                       <tr key={entry.product.id} className="align-middle">
                         <td className="border-b border-outline-variant/10 py-4 pr-4">
-                          <div className="h-20 w-14 overflow-hidden rounded-xl bg-surface-container-low">
+                          <div className={`overflow-hidden rounded-xl bg-surface-container-low ${
+                            isLandscape ? "h-14 w-20" : "h-20 w-14"
+                          }`}>
                             {previewImage?.image_url ? (
                               <img
                                 src={previewImage.image_url}
@@ -1970,6 +1757,35 @@ export default function AdminCmsPage() {
                     placeholder={defaultCmsCompareAtPrice}
                     type="number"
                   />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-widest text-secondary">
+                    Orientation
+                  </span>
+                  <div className="flex gap-6 pt-3 h-11 items-center">
+                    <label className="flex items-center gap-3 text-sm font-semibold text-on-surface cursor-pointer">
+                      <input
+                        type="radio"
+                        name="orientation"
+                        value="portrait"
+                        checked={form.orientation === "portrait"}
+                        onChange={() => handleOrientationChange("portrait")}
+                        className="h-4 w-4 border-outline text-primary focus:ring-primary"
+                      />
+                      Portrait
+                    </label>
+                    <label className="flex items-center gap-3 text-sm font-semibold text-on-surface cursor-pointer">
+                      <input
+                        type="radio"
+                        name="orientation"
+                        value="landscape"
+                        checked={form.orientation === "landscape"}
+                        onChange={() => handleOrientationChange("landscape")}
+                        className="h-4 w-4 border-outline text-primary focus:ring-primary"
+                      />
+                      Landscape
+                    </label>
+                  </div>
                 </label>
                 <label className="space-y-2">
                   <span className="text-xs font-bold uppercase tracking-widest text-secondary">
@@ -2333,7 +2149,9 @@ export default function AdminCmsPage() {
                       <span className="text-[10px] font-bold uppercase tracking-widest text-secondary">
                         Preview
                       </span>
-                      <div className="h-28 w-20 overflow-hidden rounded-xl bg-surface-container-highest">
+                      <div className={`overflow-hidden rounded-xl bg-surface-container-highest transition-all duration-300 ${
+                        form.orientation === "landscape" ? "h-20 w-28" : "h-28 w-20"
+                      }`}>
                         {image.imageUrl.trim() ? (
                           <img
                             src={image.imageUrl}

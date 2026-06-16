@@ -109,7 +109,7 @@ export default function CheckoutPage() {
     country: 'India',
   });
 
-  const shippingCost = delivery === 'express' ? 240 : 0;
+  const shippingCost = delivery === 'express' ? 240 : 70;
   const tax = 0;
   const total = subtotal + shippingCost + tax;
   const currencyCode = items[0]?.currencyCode ?? 'INR';
@@ -418,7 +418,7 @@ export default function CheckoutPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  { value: 'standard', label: 'Standard Shipping', time: '5-7 Business Days', price: 'Free' },
+                  { value: 'standard', label: 'Standard Shipping', time: '5-7 Business Days', price: formatMoney(70, currencyCode) },
                   { value: 'express', label: 'Express Courier', time: '2-3 Business Days', price: formatMoney(240, currencyCode) },
                 ].map(opt => (
                   <label key={opt.value} className="relative flex cursor-pointer rounded-lg bg-surface-container-lowest p-5 outline outline-1 outline-outline-variant/20 hover:bg-surface-dim transition-colors">
@@ -493,7 +493,7 @@ export default function CheckoutPage() {
               <div className="border-t border-outline-variant/30 pt-4 space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-secondary">Subtotal</span><span>{formatMoney(subtotal, currencyCode)}</span></div>
                 <div className="flex justify-between"><span className="text-secondary">Estimated Tax</span><span>{formatMoney(tax, currencyCode)}</span></div>
-                <div className="flex justify-between"><span className="text-secondary">Shipping</span><span className={shippingCost === 0 ? 'text-tertiary' : ''}>{shippingCost === 0 ? 'Free' : formatMoney(shippingCost, currencyCode)}</span></div>
+                <div className="flex justify-between"><span className="text-secondary">Shipping</span><span>{formatMoney(shippingCost, currencyCode)}</span></div>
               </div>
               <div className="border-t border-outline-variant/30 mt-4 pt-4 flex justify-between items-baseline">
                 <span className="font-bold">Total</span>

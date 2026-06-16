@@ -18,6 +18,7 @@ const OrderConfirmationPage = lazy(() => import("./pages/OrderConfirmationPage")
 const OrderHistoryPage = lazy(() => import("./pages/OrderHistoryPage"));
 const CreatePosterPage = lazy(() => import("./pages/CreatePosterPage"));
 const AdminCmsPage = lazy(() => import("./pages/AdminCmsPage"));
+const AdminOrdersPage = lazy(() => import("./pages/AdminOrdersPage"));
 const AdminAccessPage = lazy(() => import("./pages/AdminAccessPage"));
 const AccountPage = lazy(() => import("./pages/AccountPage"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
@@ -91,6 +92,14 @@ const App = () => (
                   element={
                     <RequireAdmin>
                       <AdminCmsPage />
+                    </RequireAdmin>
+                  }
+                />
+                <Route
+                  path={`${publicEnv.adminDashboardPath}/orders`}
+                  element={
+                    <RequireAdmin>
+                      <AdminOrdersPage />
                     </RequireAdmin>
                   }
                 />

@@ -1,7 +1,7 @@
 const defaultSeoSuffix = "BleedPrints";
 
-export const defaultCmsBasePrice = "200";
-export const defaultCmsCompareAtPrice = "249";
+export const defaultCmsBasePrice = "120";
+export const defaultCmsCompareAtPrice = "149";
 export const defaultCmsBadgeClass = "bg-inverse-surface text-inverse-on-surface";
 
 export function slugifyProductTitle(title: string) {

@@ -70,8 +70,8 @@ export default function CartPage() {
               <div className="p-6 bg-secondary-container/30 rounded-xl flex gap-4 items-start">
                 <MaterialIcon icon="local_shipping" className="text-secondary" />
                 <div>
-                  <p className="text-on-surface font-semibold text-sm">Complimentary Premium Shipping</p>
-                  <p className="text-secondary text-xs mt-1">Your order qualifies for free archival-grade packaging and insured global delivery.</p>
+                  <p className="text-on-surface font-semibold text-sm">Insured Premium Shipping</p>
+                  <p className="text-secondary text-xs mt-1">Your order qualifies for archival-grade packaging and insured global delivery.</p>
                 </div>
               </div>
             )}
