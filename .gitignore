@@ -18,6 +18,10 @@ build/
 *.p12
 *.pfx
 *.crt
+client_secret*.json
+rzp-key*.csv
+*razorpay*key*.csv
+service-account*.json
 
 # Deployment and backend local state
 .vercel/

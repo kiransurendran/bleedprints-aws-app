@@ -268,7 +268,8 @@ grant usage on schema public to anon, authenticated;
 grant select on public.collections to anon, authenticated;
 grant select on public.products, public.product_dimensions, public.product_images to anon, authenticated;
 grant select, insert, update on public.user_profiles to authenticated;
-grant select on public.orders, public.order_items to authenticated;
+grant select, update on public.orders to authenticated;
+grant select on public.order_items to authenticated;
 grant select, insert, update, delete on public.collections, public.products, public.product_dimensions, public.product_images to authenticated;
 
 drop policy if exists "Public can read active collections" on public.collections;
@@ -373,6 +374,14 @@ on public.orders
 for select
 to authenticated
 using (user_id = auth.uid() or public.is_admin());
+
+drop policy if exists "Admins can update orders" on public.orders;
+create policy "Admins can update orders"
+on public.orders
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
 
 drop policy if exists "Users can read own order items" on public.order_items;
 create policy "Users can read own order items"

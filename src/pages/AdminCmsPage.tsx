@@ -6,6 +6,11 @@ import MaterialIcon from "@/components/MaterialIcon";
 import Navbar from "@/components/Navbar";
 import { toast } from "@/components/ui/use-toast";
 import {
+  listAdminOrders,
+  updateAdminOrderStatus,
+  type AdminOrder,
+} from "@/lib/admin/orders";
+import {
   buildCanonicalPath,
   buildDefaultBadge,
   buildDefaultImageAlt,
@@ -17,8 +22,10 @@ import {
   slugifyProductTitle,
 } from "@/lib/admin/product-defaults";
 import { formatMoney } from "@/lib/money";
+import { queryCacheConfig } from "@/lib/query-client";
 import { usePageMetadata } from "@/lib/seo";
 import { supabase } from "@/lib/supabase/client";
+import type { StorefrontOrderStatus } from "@/types/orders";
 
 type AdminProductRow = {
   id: string;
@@ -155,6 +162,26 @@ const availabilityOptions: Array<ProductFormState["availabilityStatus"]> = [
 
 const currencyOptions: Array<ProductFormState["currencyCode"]> = ["INR", "USD"];
 
+const orderStatusOptions: StorefrontOrderStatus[] = [
+  "created",
+  "payment_pending",
+  "payment_authorized",
+  "paid",
+  "failed",
+  "cancelled",
+  "fulfilled",
+];
+
+const orderStatusLabels: Record<StorefrontOrderStatus, string> = {
+  created: "Created",
+  payment_pending: "Payment pending",
+  payment_authorized: "Payment authorized",
+  paid: "Paid",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  fulfilled: "Fulfilled",
+};
+
 const requiredDimensionPresets = [
   { code: "a2", label: "A2", widthCm: "42", heightCm: "59.4" },
   { code: "a3", label: "A3", widthCm: "29.7", heightCm: "42" },
@@ -257,9 +284,13 @@ function normalizeAdminError(error: unknown, fallback: string): string {
     lowercase.includes('relation "public.products" does not exist') ||
     lowercase.includes('relation "collections" does not exist') ||
     lowercase.includes('relation "public.collections" does not exist') ||
+    lowercase.includes('relation "orders" does not exist') ||
+    lowercase.includes('relation "public.orders" does not exist') ||
+    lowercase.includes('relation "order_items" does not exist') ||
+    lowercase.includes('relation "public.order_items" does not exist') ||
     candidate?.code === "42P01"
   ) {
-    return "The catalog tables do not exist yet. Run `supabase/schema.sql`, refresh the hidden admin studio route, and try again.";
+    return "The required Supabase tables do not exist yet. Run `supabase/schema.sql`, refresh the hidden admin studio route, and try again.";
   }
 
   if (candidate?.code === "23505" || lowercase.includes("duplicate key value")) {
@@ -362,6 +393,32 @@ function getPreviewImage(entry: AdminCatalogEntry) {
   );
 }
 
+function formatAdminDate(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Not available";
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function getShippingAddressSummary(address: AdminOrder["shippingAddress"]) {
+  return [
+    address.line1,
+    address.line2,
+    address.city,
+    address.state,
+    address.postalCode,
+    address.country,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 async function fetchAdminCatalog(): Promise<AdminCatalogEntry[]> {
   if (!supabase) {
     throw new Error("Supabase is not configured.");
@@ -439,6 +496,7 @@ export default function AdminCmsPage() {
   const [isSavingCollection, setIsSavingCollection] = useState(false);
   const [isDeletingCollection, setIsDeletingCollection] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [adminNotice, setAdminNotice] = useState<AdminNotice | null>(null);
 
   const {
@@ -450,6 +508,8 @@ export default function AdminCmsPage() {
     queryKey: ["admin-catalog"],
     queryFn: fetchAdminCatalog,
     retry: false,
+    staleTime: queryCacheConfig.adminDataStaleTime,
+    gcTime: queryCacheConfig.cacheRetentionTime,
   });
 
   const {
@@ -461,6 +521,23 @@ export default function AdminCmsPage() {
     queryFn: fetchAdminCollections,
     enabled: Boolean(supabase),
     retry: false,
+    staleTime: queryCacheConfig.adminDataStaleTime,
+    gcTime: queryCacheConfig.cacheRetentionTime,
+  });
+
+  const {
+    data: adminOrders = [],
+    isLoading: isOrdersLoading,
+    isFetching: isOrdersFetching,
+    error: ordersError,
+    refetch: refetchOrders,
+  } = useQuery({
+    queryKey: ["admin-orders"],
+    queryFn: listAdminOrders,
+    enabled: Boolean(supabase),
+    retry: false,
+    staleTime: queryCacheConfig.adminDataStaleTime,
+    gcTime: queryCacheConfig.cacheRetentionTime,
   });
 
   const defaultCollectionTitle = collections[0]?.title ?? "";
@@ -1227,6 +1304,60 @@ export default function AdminCmsPage() {
     }
   };
 
+  const handleUpdateOrderStatus = async (
+    order: AdminOrder,
+    status: StorefrontOrderStatus,
+  ) => {
+    if (order.status === status) {
+      return;
+    }
+
+    setUpdatingOrderId(order.id);
+    setAdminNotice(null);
+
+    try {
+      await updateAdminOrderStatus(order.id, status);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+      ]);
+
+      toast({
+        title: "Order updated",
+        description: `${order.orderNumber} is now ${orderStatusLabels[status].toLowerCase()}.`,
+      });
+      setAdminNotice({
+        title: "Order status updated",
+        description: `${order.orderNumber} was moved from ${orderStatusLabels[order.status].toLowerCase()} to ${orderStatusLabels[status].toLowerCase()}.`,
+        variant: "default",
+      });
+    } catch (orderError) {
+      console.error(orderError);
+      const message = normalizeAdminError(
+        orderError,
+        "Order status could not be updated. Make sure the admin order update policy has been applied in Supabase.",
+      );
+      toast({
+        title: "Unable to update order",
+        description: message,
+      });
+      setAdminNotice({
+        title: "Order update failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  const ordersErrorMessage = ordersError
+    ? normalizeAdminError(
+        ordersError,
+        "Orders could not be loaded. Apply the latest order RLS policy, confirm your account is admin, then refresh the admin studio.",
+      )
+    : null;
+
   const collectionErrorMessage = collectionsError
     ? normalizeAdminError(
         collectionsError,
@@ -1287,6 +1418,12 @@ export default function AdminCmsPage() {
           </div>
         )}
 
+        {ordersErrorMessage && (
+          <div className="mb-8 rounded-2xl bg-destructive/10 border border-destructive/20 p-5 text-sm text-on-surface">
+            {ordersErrorMessage}
+          </div>
+        )}
+
         {!collectionErrorMessage && supabase && !isCollectionsLoading && collections.length === 0 && (
           <div className="mb-8 rounded-2xl bg-secondary-container/20 border border-outline-variant/20 p-5 text-sm text-on-surface">
             No collections were found yet. Run `supabase/seed-sample-collections.sql` in the Supabase SQL editor, then refresh the hidden admin studio route.
@@ -1307,6 +1444,184 @@ export default function AdminCmsPage() {
         )}
 
         <div className="space-y-8">
+          <section className="rounded-[1.5rem] bg-surface-container-lowest border border-outline-variant/20 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+              <div>
+                <h2 className="font-headline font-bold text-2xl text-on-surface">
+                  Incoming Orders
+                </h2>
+                <p className="text-sm text-on-surface-variant mt-1">
+                  {isOrdersLoading
+                    ? "Loading recent orders..."
+                    : `${adminOrders.length} recent orders from Supabase`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void refetchOrders()}
+                disabled={isOrdersFetching}
+                className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-surface-container-low text-on-surface font-semibold hover:bg-surface-dim transition-colors disabled:opacity-60"
+              >
+                <MaterialIcon icon="refresh" className="text-base" />
+                {isOrdersFetching ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1120px] border-separate border-spacing-0 text-left text-sm">
+                <thead>
+                  <tr className="text-xs font-bold uppercase tracking-[0.22em] text-secondary">
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Order</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Customer</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Items</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Total</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Payment</th>
+                    <th className="border-b border-outline-variant/20 py-3 pr-4">Status</th>
+                    <th className="border-b border-outline-variant/20 py-3">Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminOrders.map((order) => {
+                    const addressSummary = getShippingAddressSummary(
+                      order.shippingAddress,
+                    );
+                    const visibleItems = order.items.slice(0, 3);
+                    const hiddenItemCount = order.items.length - visibleItems.length;
+
+                    return (
+                      <tr key={order.id} className="align-top">
+                        <td className="border-b border-outline-variant/10 py-4 pr-4">
+                          <p className="font-semibold text-on-surface">
+                            {order.orderNumber}
+                          </p>
+                          <p className="mt-1 text-xs text-on-surface-variant">
+                            {formatAdminDate(order.createdAt)}
+                          </p>
+                          {order.razorpayOrderId && (
+                            <p className="mt-2 max-w-[180px] truncate text-[11px] text-on-surface-variant">
+                              {order.razorpayOrderId}
+                            </p>
+                          )}
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 pr-4">
+                          <p className="font-semibold text-on-surface">
+                            {order.customerName || "Customer"}
+                          </p>
+                          <p className="mt-1 text-xs text-on-surface-variant">
+                            {order.customerEmail || "No email"}
+                          </p>
+                          {order.customerPhone && (
+                            <p className="mt-1 text-xs text-on-surface-variant">
+                              {order.customerPhone}
+                            </p>
+                          )}
+                          <p className="mt-2 max-w-[260px] text-xs leading-5 text-on-surface-variant">
+                            {addressSummary || "No shipping address yet"}
+                          </p>
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 pr-4">
+                          {visibleItems.length ? (
+                            <div className="space-y-3">
+                              {visibleItems.map((item) => (
+                                <div key={item.id} className="flex gap-3">
+                                  <div className="h-12 w-9 flex-shrink-0 overflow-hidden rounded-lg bg-surface-container-low">
+                                    {item.imageUrl ? (
+                                      <img
+                                        src={item.imageUrl}
+                                        alt={item.title}
+                                        className="h-full w-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="flex h-full w-full items-center justify-center text-outline-variant">
+                                        <MaterialIcon icon="image" className="text-base" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-on-surface">
+                                      {item.title}
+                                    </p>
+                                    <p className="mt-1 text-xs text-on-surface-variant">
+                                      {item.dimensionLabel} / {item.frame} / Qty {item.quantity}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                              {hiddenItemCount > 0 && (
+                                <p className="text-xs font-semibold text-secondary">
+                                  +{hiddenItemCount} more item{hiddenItemCount === 1 ? "" : "s"}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-on-surface-variant">No line items</span>
+                          )}
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 pr-4">
+                          <p className="font-semibold text-on-surface">
+                            {formatMoney(order.totalAmount, order.currencyCode)}
+                          </p>
+                          <p className="mt-1 text-xs text-on-surface-variant">
+                            Subtotal {formatMoney(order.subtotalAmount, order.currencyCode)}
+                          </p>
+                          <p className="mt-1 text-xs text-on-surface-variant">
+                            Shipping {formatMoney(order.shippingAmount, order.currencyCode)}
+                          </p>
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 pr-4">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest ${
+                              order.paymentStatus === "verified"
+                                ? "bg-secondary-container/40 text-on-surface"
+                                : order.paymentStatus === "failed"
+                                  ? "bg-destructive/10 text-destructive"
+                                  : "bg-surface-container-high text-on-surface-variant"
+                            }`}
+                          >
+                            {order.paymentStatus}
+                          </span>
+                          {order.razorpayPaymentId && (
+                            <p className="mt-2 max-w-[180px] truncate text-[11px] text-on-surface-variant">
+                              {order.razorpayPaymentId}
+                            </p>
+                          )}
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 pr-4">
+                          <select
+                            value={order.status}
+                            disabled={updatingOrderId === order.id}
+                            onChange={(event) =>
+                              void handleUpdateOrderStatus(
+                                order,
+                                event.target.value as StorefrontOrderStatus,
+                              )
+                            }
+                            className="w-full min-w-44 rounded-xl bg-surface-container-highest px-4 py-3 text-sm font-semibold text-on-surface disabled:opacity-60"
+                          >
+                            {orderStatusOptions.map((status) => (
+                              <option key={status} value={status}>
+                                {orderStatusLabels[status]}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="border-b border-outline-variant/10 py-4 text-on-surface-variant">
+                          {formatAdminDate(order.updatedAt)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {!isOrdersLoading && adminOrders.length === 0 && (
+              <div className="mt-5 rounded-2xl bg-surface-container-low p-5 text-sm text-on-surface-variant">
+                No orders yet. New paid or attempted checkouts will appear here once Supabase receives them.
+              </div>
+            )}
+          </section>
+
           <section className="rounded-[1.5rem] bg-surface-container-lowest border border-outline-variant/20 p-5">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
               <div>

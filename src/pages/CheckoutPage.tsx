@@ -44,6 +44,53 @@ type VerifyRazorpayPaymentResponse = {
   paymentStatus: string;
 };
 
+type EdgeFunctionErrorBody = {
+  code?: string;
+  details?: unknown;
+  error?: unknown;
+  message?: unknown;
+};
+
+async function getEdgeFunctionErrorMessage(
+  error: unknown,
+  fallback: string,
+) {
+  const context = (error as { context?: unknown })?.context;
+
+  if (
+    context &&
+    typeof context === 'object' &&
+    'json' in context &&
+    typeof context.json === 'function'
+  ) {
+    try {
+      const body = (await context.json()) as EdgeFunctionErrorBody;
+      const primary =
+        typeof body.error === 'string'
+          ? body.error
+          : typeof body.message === 'string'
+            ? body.message
+            : fallback;
+      const details =
+        typeof body.details === 'string'
+          ? ` Details: ${body.details}`
+          : body.code
+            ? ` Code: ${body.code}`
+            : '';
+
+      return `${primary}${details}`;
+    } catch {
+      // Fall through to the generic error message if the response body is not JSON.
+    }
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { profile, user } = useAuth();
@@ -123,13 +170,9 @@ export default function CheckoutPage() {
     }
 
     if (!supabase || !publicEnv.razorpayKeyId) {
-      console.log({
-        supabase: supabase || 'missing',
-        razorpayKeyId: publicEnv.razorpayKeyId || 'missing',
-      })
       toast({
         title: 'Checkout is not configured',
-        description: 'Add Supabase and Razorpay environment variables before launching payments.',
+        description: 'Add Supabase and the public Razorpay key ID before launching payments.',
       });
       return false;
     }
@@ -216,12 +259,13 @@ export default function CheckoutPage() {
           });
         } catch (error) {
           console.error(error);
+          const message = await getEdgeFunctionErrorMessage(
+            error,
+            'The payment succeeded in Razorpay, but we could not verify it in Supabase yet.',
+          );
           toast({
             title: 'Payment verification failed',
-            description:
-              error instanceof Error
-                ? error.message
-                : 'The payment succeeded in Razorpay, but we could not verify it in Supabase yet.',
+            description: message,
           });
           setIsSubmitting(false);
         }
@@ -292,12 +336,13 @@ export default function CheckoutPage() {
       await launchRazorpayCheckout(order, successState);
     } catch (error) {
       console.error(error);
+      const message = await getEdgeFunctionErrorMessage(
+        error,
+        'Please check your Supabase schema, Edge Functions, and Razorpay keys.',
+      );
       toast({
         title: 'Unable to start payment',
-        description:
-          error instanceof Error
-            ? error.message
-            : 'Please check your Supabase schema, Edge Functions, and Razorpay keys.',
+        description: message,
       });
       setIsSubmitting(false);
     }
