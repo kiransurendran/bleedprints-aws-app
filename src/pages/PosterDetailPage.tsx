@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import MaterialIcon from '@/components/MaterialIcon';
@@ -17,6 +17,7 @@ import { useProduct } from '@/hooks/use-products';
 
 export default function PosterDetailPage() {
   const { slug } = useParams();
+  const navigate = useNavigate();
   const { addItem } = useCart();
   const { data: product, isLoading } = useProduct(slug);
   const defaultDimensionId =
@@ -143,6 +144,11 @@ export default function PosterDetailPage() {
       frame: 'Unframed',
       series: product.collection,
     });
+  };
+
+  const handleBuyNow = () => {
+    handleAddToCart();
+    navigate('/checkout');
   };
 
   return (
@@ -281,12 +287,12 @@ export default function PosterDetailPage() {
               <MaterialIcon icon="shopping_bag" className="text-sm" />
               Add to Cart
             </button>
-            <Link
-              to="/checkout"
-              className="w-full bg-surface-container-high text-on-surface py-4 rounded-lg font-bold text-sm text-center hover:bg-surface-dim transition-colors mb-4"
+            <button
+              onClick={handleBuyNow}
+              className="w-full bg-surface-container-high text-on-surface py-4 rounded-lg font-bold text-sm text-center hover:bg-surface-dim transition-colors mb-4 cursor-pointer"
             >
               Buy Now
-            </Link>
+            </button>
             <div className="flex items-center justify-center gap-6 text-xs text-secondary">
               <span className="flex items-center gap-1"><MaterialIcon icon="local_shipping" className="text-sm" /> {product.availability.leadTimeLabel}</span>
               <span className="flex items-center gap-1"><MaterialIcon icon="verified" className="text-sm" /> Studio quality checked</span>
